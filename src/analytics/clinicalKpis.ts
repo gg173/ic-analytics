@@ -4,13 +4,14 @@ import type {
   MonthlyClinicalRollup,
   PathwayMetricSlice,
 } from '../data/types';
-import { isMrnHospDcDateMatch } from './merge';
+import { isMrnHospDcDateMatch, recodeHospitalSiteString } from './merge';
 import { formatMonthLabel, monthKey, startOfMonth } from './dates';
 
 const SITE_ORDER: Record<ClinicalSiteGroup, number> = {
   TG: 0,
   TW: 1,
-  Other: 2,
+  'TG+TW': 2,
+  Other: 3,
 };
 
 /** Map Flowsheet hospital site to TG / TW / Other. */
@@ -18,7 +19,8 @@ export function siteGroupFromHospitalSite(
   hospitalSite: string | null
 ): ClinicalSiteGroup {
   if (!hospitalSite?.trim()) return 'Other';
-  const s = hospitalSite.trim().toLowerCase();
+  const normalized = recodeHospitalSiteString(hospitalSite);
+  const s = normalized.trim().toLowerCase();
   if (
     s === 'toronto general hospital' ||
     s === 'tgh' ||

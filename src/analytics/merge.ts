@@ -1,5 +1,5 @@
 import { normalizePatientId } from '../identity/patientId';
-import type { MergedClinicalRow } from '../data/types';
+import type { LinkageMismatchLists, MergedClinicalRow } from '../data/types';
 import { parseExcelDate } from './dates';
 
 const VHA_KEYS = {
@@ -34,7 +34,15 @@ const FS_KEYS = {
   mrn: ['MRN'],
   hospDc: ['Hospital Discharge Date', 'Hospital_Discharge_Date'],
   site: ['Hospital Site'],
+  patientStatus: ['Patient Status', 'PATIENT STATUS', 'Patient_Status'],
+  eligibility: ['Eligibility', 'ELIGIBILITY'],
 } as const;
+
+/** Flowsheet rows with this status are excluded from linkage and indexing. */
+const READMIT_PATIENT_STATUS_LC = 're-admit patient';
+
+/** Only Flowsheet rows with this eligibility participate in linkage. */
+const ENROLLED_ELIGIBILITY_LC = 'enrolled';
 
 function pick(row: Record<string, unknown>, keys: readonly string[]): unknown {
   for (const k of keys) {
@@ -59,6 +67,55 @@ function yesNo(v: unknown): boolean | null {
 
 export interface FlowsheetIndexed {
   byPatient: Map<string, Record<string, unknown>[]>;
+}
+
+function normalizeStatusToken(v: unknown): string {
+  return String(v ?? '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+function isReadmitPatientFlowsheetRow(row: Record<string, unknown>): boolean {
+  const raw = pick(row, FS_KEYS.patientStatus);
+  return normalizeStatusToken(raw) === READMIT_PATIENT_STATUS_LC;
+}
+
+function hasFlowsheetHospitalDischargeDate(row: Record<string, unknown>): boolean {
+  return parseExcelDate(pick(row, FS_KEYS.hospDc)) !== null;
+}
+
+function isFlowsheetEligibilityEnrolled(row: Record<string, unknown>): boolean {
+  const raw = pick(row, FS_KEYS.eligibility);
+  return normalizeStatusToken(raw) === ENROLLED_ELIGIBILITY_LC;
+}
+
+/**
+ * PMCC and Toronto Rehab locations are rolled into Toronto General for site grouping (TG).
+ */
+export function recodeHospitalSiteString(raw: string): string {
+  const t = raw.trim();
+  if (!t) return t;
+  const lc = t.toLowerCase();
+  if (lc === 'princess margaret cancer centre') {
+    return 'Toronto General Hospital';
+  }
+  if (lc.startsWith('toronto rehab')) {
+    return 'Toronto General Hospital';
+  }
+  return t;
+}
+
+/** Drops Flowsheet rows that should not participate in linkage (eligibility, re-admits, blank DC). */
+export function filterFlowsheetRows(
+  rows: Record<string, unknown>[]
+): Record<string, unknown>[] {
+  return rows.filter(
+    (row) =>
+      isFlowsheetEligibilityEnrolled(row) &&
+      !isReadmitPatientFlowsheetRow(row) &&
+      hasFlowsheetHospitalDischargeDate(row)
+  );
 }
 
 export function indexFlowsheet(rows: Record<string, unknown>[]): FlowsheetIndexed {
@@ -131,7 +188,7 @@ export function mergeVhaFlowsheet(
     const hospitalSite =
       siteRaw === null || siteRaw === undefined
         ? null
-        : String(siteRaw).trim();
+        : recodeHospitalSiteString(String(siteRaw));
 
     out.push({
       patientKey,
@@ -156,4 +213,42 @@ export function mergeVhaFlowsheet(
  */
 export function isMrnHospDcDateMatch(r: MergedClinicalRow): boolean {
   return r.flowsheetMatchDaysDelta === 0;
+}
+
+/**
+ * Rows that did not achieve same-calendar hospital DC linkage. Uses the same matching
+ * rules as {@link mergeVhaFlowsheet}: `flowsheetRowsFiltered` must be the cohort
+ * passed to {@link indexFlowsheet} (e.g. post–filter Flowsheet rows).
+ */
+export function partitionLinkageMismatchLists(
+  vhaRows: Record<string, unknown>[],
+  flowsheetRowsFiltered: Record<string, unknown>[],
+  flowsheetByPatient: Map<string, Record<string, unknown>[]>
+): LinkageMismatchLists {
+  const vhaOnlyRows: Record<string, unknown>[] = [];
+  const usedFlowsheetRows = new Set<Record<string, unknown>>();
+
+  for (const row of vhaRows) {
+    const patientKey = normalizePatientId(pick(row, VHA_KEYS.mrn));
+    if (!patientKey) {
+      vhaOnlyRows.push(row);
+      continue;
+    }
+
+    const hospDcDate = parseExcelDate(pick(row, VHA_KEYS.hospDc));
+    const cands = flowsheetByPatient.get(patientKey) ?? [];
+    const { row: fsRow, deltaDays } = pickFlowsheetRow(cands, hospDcDate);
+
+    if (deltaDays === 0 && fsRow) {
+      usedFlowsheetRows.add(fsRow);
+    } else {
+      vhaOnlyRows.push(row);
+    }
+  }
+
+  const flowsheetOnlyRows = flowsheetRowsFiltered.filter(
+    (r) => !usedFlowsheetRows.has(r)
+  );
+
+  return { vhaOnlyRows, flowsheetOnlyRows };
 }

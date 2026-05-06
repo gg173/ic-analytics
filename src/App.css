@@ -1,13 +1,13 @@
 :root {
-  --bg: #0f1419;
-  --surface: #1a2332;
-  --text: #e8eef5;
-  --muted: #8b9cb3;
-  --accent: #3d9aed;
-  --accent-dim: #2563a8;
-  --warn: #c9a227;
-  --err: #e04545;
-  --border: #2a3849;
+  --bg: #f5f5f5;
+  --surface: #ffffff;
+  --text: #1f2933;
+  --muted: #6b7280;
+  --accent: #2563eb;
+  --accent-dim: #1d4ed8;
+  --warn: #b45309;
+  --err: #dc2626;
+  --border: #e5e7eb;
   font-family:
     'Segoe UI',
     system-ui,
@@ -24,24 +24,113 @@
 
 body {
   margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  /* Reinforce viewport minimum when %-height resolves oddly on some layouts. */
   min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.app-shell {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* No analytics and no uploads yet — header band fills viewport (first-load empty state). */
+.app-shell.app-shell--upload-landing > .top-header {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.app-shell.app-shell--upload-landing .top-header-inner {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  width: 100%;
+  min-height: 0;
+  padding: max(1.25rem, env(safe-area-inset-top, 0px)) 1.25rem
+    max(1.25rem, env(safe-area-inset-bottom, 0px));
+}
+
+.app-shell.app-shell--upload-landing .top-header-primary {
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  align-self: center;
+  width: 100%;
+  max-width: 56rem;
+  min-height: 0;
+}
+
+.app-shell.app-shell--upload-landing .header-uploads {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 0;
+  gap: 1rem;
+}
+
+.app-shell.app-shell--upload-landing .header-upload-slots {
+  flex-direction: column;
+  align-items: stretch;
+  flex: 0 0 auto;
+  width: 30vw;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-x: visible;
+  padding: 1.35rem 1.2rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(18px) saturate(165%);
+  -webkit-backdrop-filter: blur(18px) saturate(165%);
+}
+
+.app-shell.app-shell--upload-landing .header-upload-slots > .brand {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.app-shell.app-shell--upload-landing .header-upload-slots-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.app-shell.app-shell--upload-landing .header-upload {
+  width: 100%;
+  max-width: none;
+  flex: 0 0 auto;
 }
 
 .app {
-  max-width: 1200px;
-  margin: 0 auto;
+  width: 100%;
+  margin: 0;
   padding: 2rem 1.25rem 4rem;
-}
-
-.hero {
-  margin-bottom: 2rem;
-}
-
-.hero h1 {
-  font-size: 1.75rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  margin: 0 0 0.5rem;
+  background: linear-gradient(180deg, #eef1f5 0%, #dde2e8 100%);
 }
 
 .lead {
@@ -50,12 +139,207 @@ body {
   margin: 0 0 1rem;
 }
 
+.top-header {
+  width: 100%;
+  background: #292a3f;
+  color: #ffffff;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+}
+
+.top-header-inner {
+  width: 100%;
+  margin: 0;
+  padding: 0.75rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background-image: url('/uhn_gradfill1.svg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.top-header-primary {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 1rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+}
+
+.brand h1 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.app-logo {
+  height: 29px;
+  width: auto;
+  display: block;
+  object-fit: contain;
+}
+
+.brand {
+  flex-shrink: 0;
+}
+
+.header-uploads {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1 1 0%;
+  min-width: 0;
+  padding: 0.1rem 0;
+}
+
+.header-upload-slots {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.header-upload-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.header-upload-actions--post-generate {
+  margin-left: auto;
+}
+
+.header-upload {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  background: rgba(15, 20, 25, 0.2);
+  color: #e0e4f0;
+  font-size: 0.75rem;
+  flex: 0 0 auto;
+  min-width: 190px;
+}
+
+.header-upload-label {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.header-upload input[type='file'] {
+  font-size: 0.7rem;
+}
+
+.header-upload-fname {
+  font-size: 0.7rem;
+  color: #a9c6ff;
+  word-break: break-all;
+}
+
+.header-clear {
+  color: #e0e4f0;
+}
+
 .panel {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 1.25rem 1.5rem;
   margin-bottom: 1.25rem;
+  box-shadow:
+    0 8px 20px rgba(15, 23, 42, 0.08),
+    0 2px 6px rgba(15, 23, 42, 0.04);
+}
+
+.panel.panel--report-main {
+  padding: 0;
+  background: transparent;
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.panel.panel--report-main > .panel.tabs-panel {
+  border-radius: 0;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  /* No top/left inset; keep right gutter; flush with divider above report. */
+  padding: 0 0.5rem 0 0;
+}
+
+.panel.panel--report-main > .panel.tabs-panel .tabs > button {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease,
+    color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+/* Match .department-quick-btn--active (navy / teal selected pill). */
+.panel.panel--report-main > .panel.tabs-panel .tabs > button.active {
+  background: #292a3f;
+  border: 1px solid #3f4158;
+  color: #5eead4;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.panel.panel--report-main > .panel.tabs-panel .tabs > button.active:hover {
+  background: #323448;
+  border-color: #4b4d66;
+  color: #5eead4;
+}
+
+.panel.panel--report-main > .panel.tabs-panel .tabs > button.active:active {
+  background: #0d9488;
+  border-color: #ffffff;
+  color: #ffffff;
+  box-shadow:
+    inset 0 0 0 2px #ffffff,
+    0 1px 2px rgba(15, 23, 42, 0.12);
+}
+
+.panel.panel--report-main > .panel.tabs-panel .tabs > button:focus-visible {
+  outline: 2px solid #14b8a6;
+  outline-offset: 2px;
+}
+
+.panel.panel--report-main > .report {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 10px;
+  background: var(--surface);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.panel-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
 }
 
 .panel h2 {
@@ -145,14 +429,15 @@ body {
 .tabs {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: stretch;
   gap: 0.5rem;
-  margin-bottom: 1.25rem;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 0.75rem;
+  margin-bottom: 0;
+  padding: 0;
 }
 
 .tabs button {
+  display: inline-flex;
+  align-items: center;
   background: transparent;
   border: none;
   color: var(--muted);
@@ -166,10 +451,443 @@ body {
   background: var(--border);
 }
 
+.reporting-period-picker {
+  position: relative;
+  z-index: 2100;
+  display: inline-flex;
+  min-width: 250px;
+  background: #ffffff;
+  border-radius: 6px;
+}
+
+.reporting-period-trigger {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border: 1px solid #94a3b8;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #6b7280;
+  padding: 0.48rem 0.8rem;
+  font-size: 0.92rem;
+  line-height: 1.2;
+  cursor: pointer;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.7),
+    0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.reporting-period-trigger-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.82rem;
+  font-weight: 400;
+  color: #9ca3af;
+}
+
+.reporting-period-trigger-text-selected {
+  color: #2563eb;
+  font-weight: 500;
+}
+
+.reporting-period-trigger-icon {
+  font-size: 0.82rem;
+  line-height: 1;
+  color: #6b7280;
+}
+
+.reporting-period-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 300px;
+  max-height: 460px;
+  overflow-y: auto;
+  z-index: 9999;
+  background: #ffffff;
+  border: 1px solid #d4d4d8;
+  border-radius: 8px;
+  box-shadow:
+    0 6px 18px rgba(15, 23, 42, 0.12),
+    0 1px 4px rgba(15, 23, 42, 0.08);
+  padding: 0.35rem;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.reporting-period-group + .reporting-period-group {
+  margin-top: 0.2rem;
+  padding-top: 0.2rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.reporting-period-group-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #4b5563;
+}
+
+.reporting-period-option-parent {
+  min-height: 34px;
+}
+
+.reporting-period-option-parent .reporting-period-group-title {
+  flex: 1 1 auto;
+}
+
+.reporting-period-group-chevron {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.1rem 0.2rem;
+}
+
+.reporting-period-option {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 30px;
+  padding: 0.3rem 0.45rem;
+  border-radius: 7px;
+  border: 2px solid transparent;
+  background: #ffffff;
+  font-size: 0.84rem;
+  color: #3c7bab;
+  cursor: pointer;
+}
+
+.reporting-period-option:hover,
+.reporting-period-option:focus-within {
+  border-color: #111827;
+  background: #f5f5f5;
+}
+
+.reporting-period-option input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #2563eb;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.reporting-period-option.reporting-period-option-pathway {
+  min-height: 28px;
+  padding: 0.22rem 0.45rem 0.22rem 1.85rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.reporting-period-pathway-title {
+  flex: 1 1 auto;
+  color: #374151;
+}
+
+.reporting-period-option.reporting-period-option-carepath {
+  min-height: 26px;
+  padding: 0.2rem 0.4rem 0.2rem 2.95rem;
+  font-size: 0.76rem;
+}
+
+.reporting-period-option.reporting-period-option-carepath input[type='checkbox'] {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+.reporting-period-option.reporting-period-option-child {
+  min-height: 26px;
+  padding: 0.2rem 0.4rem 0.2rem 2.8rem;
+  font-size: 0.76rem;
+}
+
+.reporting-period-option.reporting-period-option-child input[type='checkbox'] {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+
 .export-btns {
   margin-left: auto;
   display: flex;
+  align-items: stretch;
   gap: 0.5rem;
+}
+
+.export-btns .btn {
+  display: inline-flex;
+  align-items: center;
+}
+
+.panel.tabs-panel {
+  position: relative;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  box-shadow:
+    0 8px 20px rgba(15, 23, 42, 0.08),
+    0 2px 8px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  backdrop-filter: blur(10px) saturate(130%);
+  -webkit-backdrop-filter: blur(10px) saturate(130%);
+}
+
+/* Stronger specificity than `.panel.tabs-panel`; strip must stay clear (parent card shows behind). */
+section.panel.panel--report-main > section.panel.tabs-panel {
+  background: none;
+  background-color: transparent;
+  background-image: none;
+  padding: 0 0.5rem 0 0;
+}
+
+.panel.tabs-panel + .panel.tabs-panel {
+  margin-top: 0.45rem;
+}
+
+/* Toolbar nested at top of a generic stacked panel — not report-main (see below). */
+.panel:not(.tabs-panel) > .panel.tabs-panel:first-child {
+  margin-bottom: 1rem;
+}
+
+.panel.panel--report-main > .panel.tabs-panel:first-child {
+  margin-bottom: 0;
+}
+
+/* Adjacent reporting cards are side-by-side — no vertical offset from stacked-panel rule. */
+.tabs-reporting-pair > .panel.tabs-panel + .panel.tabs-panel {
+  margin-top: 0;
+}
+
+.tabs-reporting-pair {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 0.45rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.tabs-reporting-pair > .panel.tabs-panel.tabs-panel-reporting:first-child {
+  flex: 0 0 auto;
+  align-self: stretch;
+}
+
+/* Second reporting card grows to consume remaining horizontal space in the pair. */
+.tabs-reporting-pair > .panel.tabs-panel.tabs-panel-reporting:nth-child(2) {
+  flex: 1 1 auto;
+  align-self: stretch;
+  min-width: 0;
+  width: auto;
+  max-width: none;
+}
+
+.tabs-reporting-pair > .panel.tabs-panel.tabs-panel-reporting > .tabs {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+}
+
+.tabs-reporting-pair > .panel.tabs-panel.tabs-panel-reporting:nth-child(2) > .tabs {
+  width: 100%;
+}
+
+.tabs-reporting-pair > .panel.tabs-panel.tabs-panel-reporting:nth-child(2)
+  > .tabs.department-quick-filters {
+  align-items: stretch;
+  flex-wrap: nowrap;
+}
+
+.tabs-reporting-pair + .panel.tabs-panel {
+  margin-top: 0.45rem;
+}
+
+/* Reporting-period row: panel width hugs the trigger only (not full main width). */
+.panel.tabs-panel.tabs-panel-reporting {
+  width: fit-content;
+  max-width: 100%;
+}
+
+.panel.tabs-panel.tabs-panel-reporting > .reporting-period-button-strips {
+  width: fit-content;
+  min-width: 0;
+}
+
+.panel.tabs-panel.tabs-panel-reporting .reporting-period-button-strips {
+  flex: 0 0 auto;
+}
+
+.reporting-period-button-strips {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.reporting-period-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+  width: 100%;
+}
+
+.reporting-period-strip-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.reporting-period-button-strips > .reporting-period-strip > .department-quick-filters {
+  margin-bottom: 0;
+  align-self: flex-start;
+}
+
+.reporting-period-button-strips
+  > .reporting-period-strip
+  > .department-quick-filters.department-quick-filters--segmented {
+  align-self: stretch;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Quarter toolbar only: square corners on all segments. */
+.department-quick-filters.department-quick-filters--segmented button.department-quick-btn {
+  border-radius: 0;
+}
+
+.department-quick-filters {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 0;
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Cohort filter pills — must not rely on ancestor `.tabs` (FY/quarter strips omit it). */
+.department-quick-filters button.department-quick-btn {
+  box-sizing: border-box;
+  flex: 1 1 0;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0.42rem 0.55rem;
+  font-size: 0.74rem;
+  font-weight: 500;
+  line-height: 1.25;
+  color: #4b5563;
+  border: 1px solid #94a3b8;
+  border-radius: 6px;
+  background: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease,
+    color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.department-quick-filters button.department-quick-btn:hover {
+  background: #14b8a6;
+  border-color: #0f766e;
+  color: #ffffff;
+}
+
+.department-quick-filters button.department-quick-btn:active {
+  background: #0d9488;
+  border-color: #ffffff;
+  color: #ffffff;
+  box-shadow:
+    inset 0 0 0 2px #ffffff,
+    0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.department-quick-filters button.department-quick-btn:focus-visible {
+  outline: 2px solid #14b8a6;
+  outline-offset: 2px;
+}
+
+.department-quick-filters button.department-quick-btn.department-quick-btn--active {
+  background: #292a3f;
+  border: 1px solid #3f4158;
+  color: #5eead4;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.department-quick-filters button.department-quick-btn.department-quick-btn--active:hover {
+  background: #323448;
+  border-color: #4b4d66;
+  color: #5eead4;
+}
+
+.department-quick-filters button.department-quick-btn.department-quick-btn--active:active {
+  background: #0d9488;
+  border-color: #ffffff;
+  color: #ffffff;
+  box-shadow:
+    inset 0 0 0 2px #ffffff,
+    0 1px 2px rgba(15, 23, 42, 0.12);
+}
+
+.tabs-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+}
+
+.tabs-panel-body--split-30-70 {
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0.65rem;
+}
+
+.tabs-panel-body--split-30-70 > .tabs-panel-cell--pickers {
+  flex: 0 0 30%;
+  width: 30%;
+  max-width: 30%;
+}
+
+.tabs-panel-body--split-30-70 > .tabs-panel-cell--actions {
+  flex: 0 0 70%;
+  width: 70%;
+  max-width: 70%;
+}
+
+.tabs-panel-cell--pickers,
+.tabs-panel-cell--actions {
+  min-width: 0;
+}
+
+.tabs-panel-body--split-30-70 .tabs-panel-cell--pickers > .tabs {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.tabs-panel-body--split-30-70 .tabs-panel-cell--pickers .reporting-period-picker {
+  min-width: 0;
+  width: 100%;
 }
 
 .report h3 {
@@ -177,8 +895,383 @@ body {
   font-size: 1rem;
 }
 
+.report-enrol-chart {
+  width: 100%;
+}
+
+.report-enrol-chart-card {
+  min-width: 0;
+}
+
+.report-enrol-chart-card .chart-wrap {
+  margin-top: 0.65rem;
+  margin-bottom: 0;
+}
+
+.report-chart-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.65rem;
+}
+
+.report-chart-heading h3 {
+  margin: 0;
+  margin-top: 0;
+  font-size: 1rem;
+}
+
+.report-chart-heading-controls {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.enrolment-legend-toggle button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.enrolment-view-toggle {
+  display: inline-flex;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.enrolment-view-toggle button {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0.38rem 0.92rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.enrolment-view-toggle button + button {
+  border-left: 1px solid var(--border);
+}
+
+.enrolment-view-toggle--stacked {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.enrolment-view-toggle--stacked button {
+  width: 100%;
+}
+
+.enrolment-view-toggle--stacked button + button {
+  border-left: none;
+  border-top: 1px solid var(--border);
+}
+
+.chart-wrap .enrol-chart-tooltip {
+  margin: 0;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.1);
+}
+
+.enrol-chart-tooltip-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 0 0.35rem;
+}
+
+.enrol-chart-tooltip-header .enrol-chart-tooltip-label {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.enrol-chart-tooltip-total {
+  flex-shrink: 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.enrol-chart-tooltip-label {
+  margin: 0 0 0.35rem;
+  font-weight: 600;
+}
+
+.enrol-chart-tooltip-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.enrol-chart-tooltip-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.15rem 0;
+}
+
+.enrol-chart-tooltip-swatch {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.enrol-chart-tooltip-name {
+  color: var(--muted);
+}
+
+.enrol-chart-tooltip-value {
+  margin-left: auto;
+  font-weight: 600;
+}
+
+.enrol-breakdown-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem 0.85rem;
+  text-align: left;
+  font-size: 0.68rem;
+}
+
+.enrol-breakdown-legend-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0.12rem 0.35rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  font-size: inherit;
+  line-height: 1.25;
+  color: var(--text);
+  transition:
+    opacity 0.12s ease,
+    background 0.12s ease;
+}
+
+.enrol-breakdown-legend-btn:hover:not(:disabled) {
+  background: rgba(241, 245, 249, 0.95);
+}
+
+.enrol-breakdown-legend-btn--solo {
+  font-weight: 600;
+}
+
+.enrol-breakdown-legend-btn--dimmed {
+  opacity: 0.42;
+}
+
+.enrol-breakdown-legend-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.enrol-breakdown-legend-swatch {
+  flex-shrink: 0;
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+}
+
+.enrol-breakdown-legend-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: min(260px, 28vw);
+}
+
+.enrol-ajmera-path-group-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 0.35rem;
+  flex-shrink: 0;
+}
+
+.enrol-ajmera-path-group-toggle.enrolment-view-toggle button {
+  padding: 0.22rem 0.42rem;
+  font-size: 0.625rem;
+  font-weight: 500;
+}
+
+.enrolment-view-toggle button:hover:not(.active) {
+  background: rgba(241, 245, 249, 0.95);
+  color: var(--text);
+}
+
+.enrolment-view-toggle button.active {
+  background: var(--accent);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.linkage-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.linkage-heading h3 {
+  margin: 0;
+  flex: 1 1 12rem;
+}
+
+.linkage-export-btn {
+  flex-shrink: 0;
+}
+
+.linkage-export-hint {
+  margin: 0 0 1rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  max-width: 70ch;
+}
+
 .chart-wrap {
   margin: 1rem 0 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.chart-wrap.chart-wrap--enrolment-side-controls {
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.enrol-chart-main {
+  flex: 1 1 280px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.enrol-chart-side {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.enrol-chart-side--right {
+  align-items: stretch;
+}
+
+.enrol-chart-side-right-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  width: min(15rem, 34vw);
+  min-width: 0;
+}
+
+.medicine-strat-toggle {
+  flex-shrink: 0;
+}
+
+.enrol-breakdown-legend--side {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  width: 100%;
+  gap: 0.22rem;
+  margin: 0;
+  padding: 0.15rem 0 0;
+  max-height: min(48vh, 22rem);
+  overflow-y: auto;
+  text-align: left;
+}
+
+.enrol-breakdown-legend--side .enrol-breakdown-legend-btn {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.enrol-breakdown-legend--side .enrol-breakdown-legend-label {
+  max-width: none;
+  white-space: normal;
+  text-align: left;
+}
+
+.venn-wrap {
+  margin: 0.75rem 0 1rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #141d28;
+  padding: 0.5rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.venn-svg {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  height: auto;
+  display: block;
+  flex: 0 1 auto;
+  overflow: visible;
+}
+
+.venn-left {
+  fill: #3d9aed88;
+  stroke: #6fb7ff;
+  stroke-width: 2;
+}
+
+.venn-right {
+  fill: #27b08b88;
+  stroke: #5be0b7;
+  stroke-width: 2;
+}
+
+.venn-label {
+  fill: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.venn-count {
+  fill: var(--text);
+  font-size: 18px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: middle;
 }
 
 .rollup h4 {
@@ -207,6 +1300,139 @@ body {
 .data-table th {
   background: #141d28;
   font-weight: 600;
+  color: #ffffff;
+}
+
+.department-row {
+  background: #0d1522;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.department-row td {
+  color: #ffffff;
+}
+
+.pathway-row {
+  background: #162234;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.pathway-row td {
+  color: #ffffff;
+}
+
+.pathway-row-nested td:first-child {
+  padding-left: 1.45rem;
+}
+
+.pathway-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.pathway-chevron {
+  width: 1ch;
+  color: var(--muted);
+}
+
+.care-path-row td:first-child {
+  padding-left: 2.55rem;
+}
+
+.clinical-kpi-chart-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+  margin-bottom: 1rem;
+}
+
+.report-clinical-kpi-cards {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.report-clinical-kpi-cards > .card {
+  min-width: 0;
+  width: 100%;
+}
+
+.clinical-support-line-metric-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+  margin: 0 0 0.75rem;
+  padding: 0.45rem 0;
+  font-size: 0.8rem;
+  color: var(--text, #0f172a);
+}
+
+.clinical-support-line-metric-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.clinical-support-line-metric-option input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.clinical-contact24-chart {
+  width: 100%;
+  min-height: 300px;
+}
+
+.clinical-contact24-tooltip {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.78rem;
+  box-shadow:
+    0 10px 25px rgba(15, 23, 42, 0.08),
+    0 2px 6px rgba(15, 23, 42, 0.04);
+}
+
+.clinical-contact24-tooltip-month {
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.clinical-contact24-tooltip-pct {
+  font-variant-numeric: tabular-nums;
+}
+
+.clinical-contact24-tooltip-ref {
+  margin-top: 0.3rem;
+  font-variant-numeric: tabular-nums;
+  color: #64748b;
+}
+
+.clinical-contact24-tooltip-sub {
+  margin-top: 0.35rem;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.3;
+}
+
+.clinical-kpi-sub {
+  margin: 0.4rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: var(--muted);
 }
 
 .cards {
@@ -215,11 +1441,42 @@ body {
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
 }
 
+/* Clinical KPI charts: default two columns per row with 10px gutter. */
+.cards.report-clinical-kpi-cards {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cards.report-clinical-kpi-cards.report-clinical-kpi-cards--triple {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.clinical-correlation-sub {
+  margin-bottom: 0.5rem;
+}
+
+.clinical-correlation-chart .recharts-cartesian-axis-tick-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.clinical-correlation-hexbin-wrap {
+  width: 100%;
+  min-height: 300px;
+}
+
+.clinical-correlation-hexbin-svg {
+  display: block;
+  max-width: 100%;
+}
+
 .card {
-  background: #141d28;
+  background: #ffffff;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 1rem;
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  box-shadow:
+    0 10px 25px rgba(15, 23, 42, 0.08),
+    0 2px 6px rgba(15, 23, 42, 0.04);
 }
 
 .card h4 {

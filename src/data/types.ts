@@ -26,7 +26,7 @@ export interface SurveyRowIc {
   raw: Record<string, unknown>;
 }
 
-export type ClinicalSiteGroup = 'TG' | 'TW' | 'Other';
+export type ClinicalSiteGroup = 'TG' | 'TW' | 'TG+TW' | 'Other';
 
 export interface PathwayMetricSlice {
   pathwayId: string;
@@ -54,6 +54,12 @@ export interface LinkageStats {
   flowsheetRowCount: number;
   /** VHA rows with Flowsheet MRN + same-day hospital DC match (enrolment volume cohort). */
   vhaMrnHospDcMatched: number;
+  /** Count displayed in Venn overlap. */
+  linkedCount: number;
+  /** Count displayed in Venn left-only segment. */
+  vhaOnlyCount: number;
+  /** Count displayed in Venn right-only segment. */
+  flowsheetOnlyCount: number;
   mergedWithSite: number;
   mergedWithoutSite: number;
   peIpRows: number;
@@ -76,9 +82,17 @@ export interface SurveyIcSummary {
   testimonialSamples: string[];
 }
 
+/** Rows not achieving same‑calendar linkage vs counterpart dataset (for QA exports). */
+export interface LinkageMismatchLists {
+  vhaOnlyRows: Record<string, unknown>[];
+  flowsheetOnlyRows: Record<string, unknown>[];
+}
+
 export interface AnalyticsBundle {
   merged: MergedClinicalRow[];
   linkage: LinkageStats;
+  /** Rows without same-day Flowsheet ↔ VHA match vs filtered Flowsheet cohort. */
+  linkageMismatchLists: LinkageMismatchLists;
   clinicalRollups: MonthlyClinicalRollup[];
   surveyIp: SurveyIpSummary | null;
   surveyIc: SurveyIcSummary | null;

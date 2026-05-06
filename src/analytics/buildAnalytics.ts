@@ -1,5 +1,14 @@
-import type { AnalyticsBundle, LinkageStats } from '../data/types';
-import { mergeVhaFlowsheet, indexFlowsheet } from './merge';
+import type {
+  AnalyticsBundle,
+  LinkageMismatchLists,
+  LinkageStats,
+} from '../data/types';
+import {
+  mergeVhaFlowsheet,
+  indexFlowsheet,
+  filterFlowsheetRows,
+  partitionLinkageMismatchLists,
+} from './merge';
 import { buildClinicalRollups } from './clinicalKpis';
 import {
   summarizeIpSurvey,
@@ -31,6 +40,7 @@ export function buildAnalytics(inputs: ParsedInputs): AnalyticsBundle {
     return {
       merged: [],
       linkage: emptyLinkage(),
+      linkageMismatchLists: emptyLinkageMismatch(),
       clinicalRollups: [],
       surveyIp: null,
       surveyIc: null,
@@ -39,11 +49,21 @@ export function buildAnalytics(inputs: ParsedInputs): AnalyticsBundle {
     };
   }
 
-  const fsIdx = inputs.flowsheet?.rows.length
-    ? indexFlowsheet(inputs.flowsheet.rows)
+  const rawFlowsheetRows = inputs.flowsheet?.rows ?? [];
+  const flowsheetRows = rawFlowsheetRows.length
+    ? filterFlowsheetRows(rawFlowsheetRows)
+    : [];
+
+  const fsIdx = flowsheetRows.length
+    ? indexFlowsheet(flowsheetRows)
     : { byPatient: new Map<string, Record<string, unknown>[]>() };
 
   const merged = mergeVhaFlowsheet(inputs.vha!.rows, fsIdx.byPatient);
+  const linkageMismatchLists = partitionLinkageMismatchLists(
+    inputs.vha!.rows,
+    flowsheetRows,
+    fsIdx.byPatient
+  );
   const clinicalKeys = new Set(merged.map((m) => m.patientKey));
 
   let mergedWithSite = 0;
@@ -54,6 +74,9 @@ export function buildAnalytics(inputs: ParsedInputs): AnalyticsBundle {
     else mergedWithoutSite += 1;
     if (m.flowsheetMatchDaysDelta === 0) vhaMrnHospDcMatched += 1;
   }
+  const linkedCount = vhaMrnHospDcMatched;
+  const vhaOnlyCount = Math.max(inputs.vha!.rows.length - linkedCount, 0);
+  const flowsheetOnlyCount = Math.max(flowsheetRows.length - linkedCount, 0);
 
   const ipHeaders = inputs.peIp?.headers ?? [];
   const icHeaders = inputs.peIc?.headers ?? [];
@@ -62,8 +85,11 @@ export function buildAnalytics(inputs: ParsedInputs): AnalyticsBundle {
 
   const linkage: LinkageStats = {
     vhaRowCount: inputs.vha!.rows.length,
-    flowsheetRowCount: inputs.flowsheet?.rows.length ?? 0,
+    flowsheetRowCount: flowsheetRows.length,
     vhaMrnHospDcMatched,
+    linkedCount,
+    vhaOnlyCount,
+    flowsheetOnlyCount,
     mergedWithSite,
     mergedWithoutSite,
     peIpRows: inputs.peIp?.rows.length ?? 0,
@@ -92,6 +118,7 @@ export function buildAnalytics(inputs: ParsedInputs): AnalyticsBundle {
   return {
     merged,
     linkage,
+    linkageMismatchLists,
     clinicalRollups,
     surveyIp,
     surveyIc,
@@ -105,6 +132,9 @@ function emptyLinkage(): LinkageStats {
     vhaRowCount: 0,
     flowsheetRowCount: 0,
     vhaMrnHospDcMatched: 0,
+    linkedCount: 0,
+    vhaOnlyCount: 0,
+    flowsheetOnlyCount: 0,
     mergedWithSite: 0,
     mergedWithoutSite: 0,
     peIpRows: 0,
@@ -112,4 +142,8 @@ function emptyLinkage(): LinkageStats {
     peIpWithClinical: 0,
     peIcWithClinical: 0,
   };
+}
+
+function emptyLinkageMismatch(): LinkageMismatchLists {
+  return { vhaOnlyRows: [], flowsheetOnlyRows: [] };
 }

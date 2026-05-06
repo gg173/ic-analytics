@@ -1,5 +1,38 @@
 import * as XLSX from 'xlsx';
-import type { AnalyticsBundle } from '../data/types';
+import type { AnalyticsBundle, LinkageMismatchLists } from '../data/types';
+
+function mismatchRowsToSheet(rows: Record<string, unknown>[]): XLSX.WorkSheet {
+  if (!rows.length) {
+    return XLSX.utils.aoa_to_sheet([
+      ['No rows matching this linkage bucket for the current uploads.'],
+    ]);
+  }
+  const ws = XLSX.utils.json_to_sheet(rows);
+  return ws;
+}
+
+/** Excel workbook with sheets `VHA_only` and `Flowsheet_only` (same linkage rules as the dashboard). */
+export function linkageMismatchToWorkbook(
+  lists: LinkageMismatchLists
+): XLSX.WorkBook {
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    wb,
+    mismatchRowsToSheet(lists.vhaOnlyRows),
+    'VHA_only'
+  );
+  XLSX.utils.book_append_sheet(
+    wb,
+    mismatchRowsToSheet(lists.flowsheetOnlyRows),
+    'Flowsheet_only'
+  );
+  return wb;
+}
+
+export function downloadLinkageMismatchExcel(bundle: AnalyticsBundle): void {
+  const wb = linkageMismatchToWorkbook(bundle.linkageMismatchLists);
+  downloadWorkbook(wb, 'linkage-vha-fs-only.xlsx');
+}
 
 export function analyticsToWorkbook(bundle: AnalyticsBundle): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();
