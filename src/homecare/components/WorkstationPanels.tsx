@@ -116,6 +116,7 @@ const DISCIPLINE_OPTIONS = [
   'Personal Support',
   'Occupational Therapy',
   'Physiotherapy',
+  'Rehab Assistant',
   'Respiratory Therapy',
   'Speech-Language Pathology',
   'NSWOC',
