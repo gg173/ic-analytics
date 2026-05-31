@@ -8,6 +8,14 @@ export interface MergedClinicalRow {
   supportLineCalls: number;
   scheduledCheckInCalls: number;
   enrollStatus: string;
+  /** VHA index / enrolment start date (active-patient logic). */
+  indexDate: Date | null;
+  /** VHA program discharge date (null → still active). */
+  progDcDate: Date | null;
+  /** VHA support tier (ST- prefix required; invalid/blank → unknown in charts). */
+  supportTier: string;
+  /** VHA extract IC lead name (blank → grouped as unknown in charts). */
+  icLead: string;
   hospitalSite: string | null;
   flowsheetMatchDaysDelta: number | null;
 }

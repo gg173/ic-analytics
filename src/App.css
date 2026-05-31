@@ -90,21 +90,68 @@ body {
   box-sizing: border-box;
   overflow-x: visible;
   padding: 1.35rem 1.2rem;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
   box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(18px) saturate(165%);
-  -webkit-backdrop-filter: blur(18px) saturate(165%);
+    0 8px 20px rgba(15, 23, 42, 0.08),
+    0 2px 6px rgba(15, 23, 42, 0.04);
 }
 
-.app-shell.app-shell--upload-landing .header-upload-slots > .brand {
-  display: flex;
-  justify-content: center;
+.app-shell.app-shell--upload-landing .header-upload-slots > .upload-landing-instructions {
+  margin: 0;
   width: 100%;
   flex-shrink: 0;
+  text-align: center;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.landing-path-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  width: 100%;
+}
+
+.landing-path-choice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(15, 20, 25, 0.28);
+  color: #e8ecf5;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.landing-path-choice:hover {
+  background: rgba(37, 99, 235, 0.22);
+  border-color: rgba(169, 198, 255, 0.45);
+}
+
+.landing-path-back {
+  align-self: flex-start;
+  margin-bottom: 0.15rem;
+  padding: 0.2rem 0;
+  border: none;
+  background: transparent;
+  color: #a9c6ff;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.landing-path-back:hover {
+  color: #dbeafe;
 }
 
 .app-shell.app-shell--upload-landing .header-upload-slots-footer {
@@ -117,13 +164,53 @@ body {
   flex-shrink: 0;
   margin-top: 0.15rem;
   padding-top: 0.75rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-top: 1px solid var(--border);
 }
 
 .app-shell.app-shell--upload-landing .header-upload {
   width: 100%;
   max-width: none;
   flex: 0 0 auto;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.app-shell.app-shell--upload-landing .header-upload-fname {
+  color: var(--muted);
+}
+
+.app-shell.app-shell--upload-landing .header-clear {
+  color: var(--muted);
+}
+
+/* Analytics upload landing inside the shared app shell (hc-main). */
+.hc-main > .app-shell.app-shell--upload-landing {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+}
+
+.hc-main > .app-shell.app-shell--upload-landing > .top-header {
+  flex: 1 1 auto;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+}
+
+.hc-main > .app-shell.app-shell--upload-landing .top-header-inner {
+  flex: 1 1 auto;
+  background-image: none;
+  background: transparent;
+  padding: 2rem 1.5rem;
+}
+
+.hc-main > .app-shell.app-shell--upload-landing .header-upload-slots {
+  width: min(28rem, 100%);
+}
+
+.hc-main:has(> .app-shell.app-shell--upload-landing) {
+  overflow-y: auto;
 }
 
 .app {
@@ -215,6 +302,13 @@ body {
 
 .header-upload-actions--post-generate {
   margin-left: auto;
+}
+
+.header-portal-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
 }
 
 .header-upload {
@@ -774,10 +868,14 @@ section.panel.panel--report-main > section.panel.tabs-panel {
   display: flex;
   flex-direction: row;
   flex-wrap: nowrap;
-  gap: 0;
+  gap: 0.5rem;
   min-width: 0;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+.department-quick-filters.department-quick-filters--segmented {
+  gap: 0;
 }
 
 /* Cohort filter pills — must not rely on ancestor `.tabs` (FY/quarter strips omit it). */
@@ -895,16 +993,85 @@ section.panel.panel--report-main > section.panel.tabs-panel {
   font-size: 1rem;
 }
 
-.report-enrol-chart {
+.report-enrol-chart,
+.report-patient-count-chart {
   width: 100%;
+}
+
+.report-enrol-chart + .report-patient-count-chart {
+  margin-top: 1rem;
 }
 
 .report-enrol-chart-card {
   min-width: 0;
 }
 
+.report-enrol-chart-layout {
+  display: flex;
+  align-items: stretch;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.report-enrol-chart-visual {
+  flex: 7 1 0;
+  min-width: 0;
+}
+
+.report-enrol-chart-controls {
+  flex: 3 1 0;
+  min-width: 0;
+}
+
+.report-enrol-chart-controls-grid {
+  display: grid;
+  grid-template-columns: minmax(6.75rem, 1fr) minmax(0, 2fr);
+  gap: 0.75rem 0.85rem;
+  align-items: start;
+}
+
+.enrol-chart-control-row {
+  display: contents;
+}
+
+.enrol-chart-control-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text);
+  padding-top: 0.38rem;
+  line-height: 1.25;
+}
+
+.enrol-chart-control-input {
+  min-width: 0;
+}
+
+.enrolment-view-toggle--vertical {
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+}
+
+.enrolment-view-toggle--vertical button {
+  width: 100%;
+  text-align: left;
+}
+
+.enrolment-view-toggle--vertical button + button {
+  border-left: none;
+  border-top: 1px solid var(--border);
+}
+
 .report-enrol-chart-card .chart-wrap {
   margin-top: 0.65rem;
+  margin-bottom: 0;
+}
+
+.report-enrol-chart-card .chart-wrap--enrolment-visual {
+  margin-top: 0;
+}
+
+.report-enrol-chart-visual .report-chart-heading {
   margin-bottom: 0;
 }
 
@@ -917,10 +1084,160 @@ section.panel.panel--report-main > section.panel.tabs-panel {
   margin-bottom: 0.65rem;
 }
 
+.report-enrol-chart-controls .enrolment-view-toggle {
+  width: 100%;
+}
+
+.report-enrol-chart-controls .enrol-chart-control-input .enrolment-view-toggle:not(.enrolment-view-toggle--vertical) {
+  display: flex;
+}
+
+.report-enrol-chart-controls .enrol-chart-control-input .enrolment-view-toggle:not(.enrolment-view-toggle--vertical) button {
+  flex: 1 1 0;
+}
+
+.report-enrol-chart-controls .enrolment-view-toggle button {
+  font-size: 0.74rem;
+  padding: 0.3rem 0.7rem;
+}
+
+.patient-count-control-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.patient-count-los-legend-swatch {
+  border-top-width: 3px;
+}
+
+.pathway-multiselect {
+  position: relative;
+  width: 100%;
+}
+
+.pathway-multiselect-trigger {
+  width: 100%;
+  text-align: left;
+  font-size: 0.74rem;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.pathway-multiselect-trigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.pathway-multiselect-menu {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  right: 0;
+  max-height: 11rem;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+  padding: 0.35rem 0;
+}
+
+.pathway-multiselect-option {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  cursor: pointer;
+}
+
+.pathway-multiselect-option:hover {
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.pathway-multiselect-option input {
+  flex-shrink: 0;
+  margin: 0;
+}
+
 .report-chart-heading h3 {
   margin: 0;
   margin-top: 0;
   font-size: 1rem;
+}
+
+.report-chart-heading.report-chart-heading--enrol {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  gap: 0.45rem;
+  width: 100%;
+}
+
+.report-chart-heading.report-chart-heading--enrol h3 {
+  align-self: flex-start;
+  text-align: left;
+}
+
+.report-chart-heading-enrol-title {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.28rem;
+  width: 100%;
+}
+
+.enrol-stat-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.7rem;
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+
+.enrol-stat-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.enrol-stat-legend-swatch {
+  flex-shrink: 0;
+  display: block;
+  width: 1.15rem;
+  height: 0;
+  border-top: 2.5px dotted;
+}
+
+.enrol-stat-legend-label {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.report-chart-heading.report-chart-heading--enrol .enrol-breakdown-legend {
+  justify-content: flex-start;
+  width: 100%;
+  font-size: 0.72rem;
+  gap: 0.35rem 0.75rem;
+}
+
+.report-chart-heading.report-chart-heading--enrol .enrol-breakdown-legend-label {
+  max-width: min(220px, 22vw);
 }
 
 .report-chart-heading-controls {
@@ -1106,20 +1423,6 @@ section.panel.panel--report-main > section.panel.tabs-panel {
   max-width: min(260px, 28vw);
 }
 
-.enrol-ajmera-path-group-wrap {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  margin-top: 0.35rem;
-  flex-shrink: 0;
-}
-
-.enrol-ajmera-path-group-toggle.enrolment-view-toggle button {
-  padding: 0.22rem 0.42rem;
-  font-size: 0.625rem;
-  font-weight: 500;
-}
-
 .enrolment-view-toggle button:hover:not(.active) {
   background: rgba(241, 245, 249, 0.95);
   color: var(--text);
@@ -1169,6 +1472,12 @@ section.panel.panel--report-main > section.panel.tabs-panel {
   flex-wrap: wrap;
 }
 
+.chart-wrap.chart-wrap--enrolment-visual {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
 .enrol-chart-main {
   flex: 1 1 280px;
   min-width: 0;
@@ -1176,6 +1485,11 @@ section.panel.panel--report-main > section.panel.tabs-panel {
   flex-direction: column;
   align-items: stretch;
 }
+
+.report-enrol-chart-controls .enrol-breakdown-legend--side {
+  max-height: min(36vh, 18rem);
+}
+
 
 .enrol-chart-side {
   flex: 0 0 auto;

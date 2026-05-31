@@ -8,11 +8,21 @@ import {
   downloadWorkbook,
 } from './export/excelExport';
 import { downloadExecutivePdf } from './export/pdfExport';
-import type { AnalyticsBundle } from './data/types';
-import { startOfMonth } from './analytics/dates';
+import type { AnalyticsBundle, ClinicalSiteGroup, MergedClinicalRow } from './data/types';
+import { monthKey, startOfMonth } from './analytics/dates';
 import { isMrnHospDcDateMatch } from './analytics/merge';
+import {
+  buildDailyActivePatientLosStackSeries,
+  buildDailyActivePatientSeries,
+  enumerateCalendarDaysInclusive,
+  lastDayOfMonth,
+  PATIENT_COUNT_LOS_COLORS,
+  PATIENT_COUNT_LOS_STRAT_LABELS,
+} from './analytics/patientCounts';
 import type { BarRectangleItem, XAxisTickContentProps } from 'recharts';
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -20,6 +30,7 @@ import {
   LabelList,
   Line,
   LineChart,
+  ReferenceLine,
   Rectangle,
   ResponsiveContainer,
   Tooltip,
@@ -34,17 +45,28 @@ type Slot = 'vha' | 'flowsheet' | 'peIp' | 'peIc';
 const APP_LOGO_SRC = '/UHN-at-Home.svg';
 
 const ENROL_LEGEND_PALETTE = [
-  '#2563eb',
-  '#14b8a6',
+  '#60a5fa',
+  '#16a34a',
   '#7c3aed',
-  '#ea580c',
-  '#0891b2',
-  '#6366f1',
+  '#fc9003',
+  '#64748b',
+  '#fcd703',
   '#db2777',
-  '#0d9488',
-  '#4f46e5',
+  '#65a30d',
+  '#dc2626',
   '#c026d3',
 ] as const;
+
+/** High-contrast strokes for avg/median overlays (not bar legend colours). */
+const ENROL_STAT_OVERALL_STROKE = '#0f172a';
+
+/** Plot margins; XAxis `height` reserves space for rotated month labels (avoid duplicating in `bottom`). */
+const ENROL_CHART_MARGINS = {
+  top: 18,
+  right: 0,
+  left: 0,
+  bottom: 0,
+} as const;
 
 const SLOT_LABEL: Record<Slot, string> = {
   vha: 'VHA extract (.xlsx)',
@@ -54,6 +76,22 @@ const SLOT_LABEL: Record<Slot, string> = {
 };
 
 /** Upper Y bound for enrolment charts: proportional headroom vs fixed + padding (keeps bars filling the chart). */
+function enrolNumericMean(values: readonly number[]): number | null {
+  if (!values.length) return null;
+  const sum = values.reduce((a, b) => a + b, 0);
+  return sum / values.length;
+}
+
+function enrolNumericMedian(values: readonly number[]): number | null {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 0) {
+    return (sorted[mid - 1]! + sorted[mid]!) / 2;
+  }
+  return sorted[mid]!;
+}
+
 function enrolmentChartYUpperBound(maxVolume: number): number {
   if (!Number.isFinite(maxVolume) || maxVolume <= 0) return 1;
   const padded = maxVolume * 1.082;
@@ -105,6 +143,210 @@ function clinicalPctDisplayWhole(p: number): string {
 }
 
 type SupportLineMetricMode = 'total' | 'avgPerPatient';
+
+type EnrolmentStratifyBy =
+  | 'pathway'
+  | 'site'
+  | 'supportTier'
+  | 'ajmeraOrganTypeNp'
+  | 'ajmeraOrganTypeOnly'
+  | 'ajmeraNpOnly';
+
+type EnrolmentShowStatistic = 'average' | 'median';
+
+type EnrolStatReferenceLine = {
+  y: number;
+  stroke: string;
+  key: string;
+  legendLabel: string;
+};
+
+function formatEnrolStatLegendValue(y: number, pctMode: boolean): string {
+  if (pctMode) return `${y.toFixed(1)}%`;
+  const rounded = Math.round(y * 10) / 10;
+  if (Math.abs(rounded - Math.round(rounded)) < 1e-6) {
+    return String(Math.round(rounded));
+  }
+  return rounded.toFixed(1);
+}
+
+function enrolStatLegendEntryLabel(
+  stat: EnrolmentShowStatistic,
+  seriesLabel: string | null,
+  y: number,
+  pctMode: boolean
+): string {
+  const statWord = stat === 'average' ? 'Avg' : 'Median';
+  const value = formatEnrolStatLegendValue(y, pctMode);
+  if (seriesLabel == null) return `${statWord} (${value})`;
+  return `${statWord}: ${seriesLabel} (${value})`;
+}
+
+function enrolBreakdownLegendEntryLabel(
+  stat: EnrolmentShowStatistic,
+  categoryLabel: string,
+  y: number,
+  pctMode: boolean
+): string {
+  const statWord = stat === 'average' ? 'Avg' : 'Median';
+  const value = formatEnrolStatLegendValue(y, pctMode);
+  return `${categoryLabel} (${statWord} = ${value})`;
+}
+
+const ENROL_STRATIFY_LABELS: Record<EnrolmentStratifyBy, string> = {
+  pathway: 'Pathway',
+  site: 'Site',
+  supportTier: 'Support Tier',
+  ajmeraOrganTypeNp: 'Organ Type + New/Past',
+  ajmeraOrganTypeOnly: 'Organ Type',
+  ajmeraNpOnly: 'New/Past',
+};
+
+function isAjmeraPathwayStratifyBy(
+  stratify: EnrolmentStratifyBy | null
+): stratify is
+  | 'ajmeraOrganTypeNp'
+  | 'ajmeraOrganTypeOnly'
+  | 'ajmeraNpOnly' {
+  return (
+    stratify === 'ajmeraOrganTypeNp' ||
+    stratify === 'ajmeraOrganTypeOnly' ||
+    stratify === 'ajmeraNpOnly'
+  );
+}
+
+function isPathwayLikeEnrolStratifyBy(
+  stratify: EnrolmentStratifyBy | null
+): stratify is
+  | 'pathway'
+  | 'ajmeraOrganTypeNp'
+  | 'ajmeraOrganTypeOnly'
+  | 'ajmeraNpOnly' {
+  return stratify === 'pathway' || isAjmeraPathwayStratifyBy(stratify);
+}
+
+function ajmeraCarePathGroupModeFromStratify(
+  stratify: EnrolmentStratifyBy | null
+): AjmeraCarePathGroupMode | null {
+  switch (stratify) {
+    case 'ajmeraOrganTypeNp':
+      return 'organTypeNp';
+    case 'ajmeraOrganTypeOnly':
+      return 'organTypeOnly';
+    case 'ajmeraNpOnly':
+      return 'npOnly';
+    default:
+      return null;
+  }
+}
+
+const SITE_STRATIFY_ORDER: readonly ClinicalSiteGroup[] = [
+  'TG',
+  'TW',
+  'TG+TW',
+  'Other',
+];
+
+const ENROL_STRAT_UNKNOWN = '(Unknown)';
+
+function normalizeEnrolStratLabel(raw: string | null | undefined): string {
+  const t = String(raw ?? '').trim();
+  return t.length ? t : ENROL_STRAT_UNKNOWN;
+}
+
+function EnrolChartControlRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="enrol-chart-control-row">
+      <div className="enrol-chart-control-label">{label}</div>
+      <div className="enrol-chart-control-input">{children}</div>
+    </div>
+  );
+}
+
+function PathwayMultiSelect({
+  options,
+  selected,
+  onChange,
+  ariaLabel,
+}: {
+  options: readonly string[];
+  selected: readonly string[];
+  onChange: (next: string[]) => void;
+  ariaLabel: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [open]);
+
+  const summary = useMemo(() => {
+    if (!options.length) return 'No pathways';
+    if (!selected.length) return 'None selected';
+    if (selected.length === options.length) return 'All pathways';
+    if (selected.length === 1) return selected[0]!;
+    return `${selected.length} pathways`;
+  }, [options, selected]);
+
+  const togglePathway = (pathway: string) => {
+    const next = selected.includes(pathway)
+      ? selected.filter((p) => p !== pathway)
+      : [...selected, pathway];
+    onChange(options.filter((p) => next.includes(p)));
+  };
+
+  return (
+    <div className="pathway-multiselect" ref={rootRef}>
+      <button
+        type="button"
+        className="pathway-multiselect-trigger"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-label={ariaLabel}
+        disabled={!options.length}
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        {summary}
+      </button>
+      {open && options.length > 0 && (
+        <div
+          className="pathway-multiselect-menu"
+          role="listbox"
+          aria-label={ariaLabel}
+          aria-multiselectable
+        >
+          {options.map((pathway) => {
+            const checked = selected.includes(pathway);
+            return (
+              <label key={pathway} className="pathway-multiselect-option">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => togglePathway(pathway)}
+                />
+                <span>{pathway}</span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 type CallsMetricAvgMonthRow = {
   month: string;
@@ -191,12 +433,25 @@ function ajmeraNewPastOnlyGroupKey(carePath: string): string {
   return 'Other';
 }
 
+function ajmeraEnrolCarePathCategoryKeyForMode(
+  carePath: string,
+  mode: AjmeraCarePathGroupMode
+): string {
+  if (mode === 'organTypeOnly') {
+    return ajmeraCollapseCarePathGroupKey(carePath);
+  }
+  if (mode === 'npOnly') {
+    return ajmeraNewPastOnlyGroupKey(carePath);
+  }
+  return carePath;
+}
+
 /** Ajmera TX enrolment stacks: hue by family segment; N = darker hex, P = lighter. */
 const AJMERA_CARE_PATH_FAMILY_COLORS = {
   BW: { darker: '#6d28d9', lighter: '#c4b5fd' },
   HR: { darker: '#db2777', lighter: '#fca5cb' },
   KD: { darker: '#1d4ed8', lighter: '#93c5fd' },
-  LG: { darker: '#c2410c', lighter: '#fdba74' },
+  LG: { darker: '#fc9003', lighter: '#fec84a' },
   LV: { darker: '#0f766e', lighter: '#5eead4' },
 } as const;
 
@@ -396,117 +651,32 @@ function buildEnrolmentCumulativeStackRows(
   });
 }
 
-/** Cumulative stacked segments for TG/TW enrolment pillars (paired `tg_e*`, `tw_e*` keys per month row). */
-function buildEnrolmentCumulativeSiteSplitStackRows(
-  monthlyRows: Array<Record<string, string | number>>,
-  categoryCount: number
-): Array<Record<string, string | number>> {
-  if (!monthlyRows.length) return [];
-  const sumsTg = Array.from({ length: categoryCount }, () => 0);
-  const sumsTw = Array.from({ length: categoryCount }, () => 0);
-  return monthlyRows.map((monthRow) => {
-    const row: Record<string, string | number> = {
-      month: monthRow.month as string,
-    };
-    let tgTotals = 0;
-    let twTotals = 0;
-    for (let i = 0; i < categoryCount; i += 1) {
-      sumsTg[i] += Number(monthRow[`tg_e${i}`]) || 0;
-      sumsTw[i] += Number(monthRow[`tw_e${i}`]) || 0;
-      row[`tg_e${i}`] = sumsTg[i];
-      row[`tw_e${i}`] = sumsTw[i];
-      tgTotals += sumsTg[i];
-      twTotals += sumsTw[i];
-    }
-    row.volume = tgTotals + twTotals;
-    return row;
-  });
-}
-
-function enrolPctSiteStratSimpleMonthly(
-  rows: ReadonlyArray<Record<string, string | number>>
-): Array<Record<string, string | number>> {
-  if (!rows.length) return [];
-  const grandTotal = rows.reduce((s, r) => s + ((Number(r.tgVol) || 0) + (Number(r.twVol) || 0)), 0);
-  if (grandTotal <= 0) {
-    return rows.map((row) => ({
-      ...row,
-      _enrolPctMode: 1,
-      _raw_volume: 0,
-      volume: 0,
-      tgVol: 0,
-      twVol: 0,
-      _raw_tgVol: 0,
-      _raw_twVol: 0,
-    }));
-  }
-  return rows.map((row) => {
-    const tg = Number(row.tgVol) || 0;
-    const tw = Number(row.twVol) || 0;
-    const sum = tg + tw;
-    return {
-      ...row,
-      _enrolPctMode: 1,
-      month: row.month,
-      volume: (sum / grandTotal) * 100,
-      _raw_volume: sum,
-      _raw_tgVol: tg,
-      _raw_twVol: tw,
-      tgVol: (tg / grandTotal) * 100,
-      twVol: (tw / grandTotal) * 100,
-    };
-  });
-}
-
-function enrolPctSiteStratSimpleCumulative(
-  rows: ReadonlyArray<Record<string, string | number>>
-): Array<Record<string, string | number>> {
-  if (!rows.length) return [];
-  const last = rows[rows.length - 1];
-  const grandCum = Number(last?.volume) || 0;
-  if (grandCum <= 0) {
-    return rows.map((row) => ({
-      ...row,
-      _enrolPctMode: 1,
-      _raw_volume: 0,
-      _raw_priorTGCumulative: 0,
-      _raw_priorTWCumulative: 0,
-      _raw_tgMonthAdded: 0,
-      _raw_twMonthAdded: 0,
-      volume: 0,
-      priorTGCumulative: 0,
-      priorTWCumulative: 0,
-      tgMonthAdded: 0,
-      twMonthAdded: 0,
-    }));
-  }
-  return rows.map((row) => {
-    const rv = Number(row.volume) || 0;
-    const rpt = Number(row.priorTGCumulative) || 0;
-    const rtta = Number(row.tgMonthAdded) || 0;
-    const rpw = Number(row.priorTWCumulative) || 0;
-    const rtw = Number(row.twMonthAdded) || 0;
-    return {
-      ...row,
-      _enrolPctMode: 1,
-      _raw_volume: rv,
-      _raw_priorTGCumulative: rpt,
-      _raw_priorTWCumulative: rpw,
-      _raw_tgMonthAdded: rtta,
-      _raw_twMonthAdded: rtw,
-      volume: (rv / grandCum) * 100,
-      priorTGCumulative: (rpt / grandCum) * 100,
-      tgMonthAdded: (rtta / grandCum) * 100,
-      priorTWCumulative: (rpw / grandCum) * 100,
-      twMonthAdded: (rtw / grandCum) * 100,
-    };
-  });
-}
-
 type EnrolLegendPayloadEntry = {
   value: unknown;
   color: string;
 };
+
+/** Dotted reference-line keys for avg/median overlay (below chart title). */
+function EnrolStatLegendContent(props: {
+  lines: readonly EnrolStatReferenceLine[];
+}) {
+  const { lines } = props;
+  if (!lines.length) return null;
+  return (
+    <ul className="enrol-stat-legend" aria-label="Statistics reference lines">
+      {lines.map((line) => (
+        <li key={line.key}>
+          <span
+            className="enrol-stat-legend-swatch"
+            style={{ borderColor: line.stroke }}
+            aria-hidden
+          />
+          <span className="enrol-stat-legend-label">{line.legendLabel}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 /** Care-path breakdown list (paired bar colours via `payload` from parent). */
 function EnrolBreakdownLegendContent(props: {
@@ -514,8 +684,19 @@ function EnrolBreakdownLegendContent(props: {
   soloCategory: string | null;
   onToggleSolo: (label: string) => void;
   variant?: 'inline' | 'side';
+  stat?: EnrolmentShowStatistic | null;
+  statByCategory?: ReadonlyMap<string, number>;
+  pctMode?: boolean;
 }) {
-  const { payload, soloCategory, onToggleSolo, variant = 'inline' } = props;
+  const {
+    payload,
+    soloCategory,
+    onToggleSolo,
+    variant = 'inline',
+    stat = null,
+    statByCategory,
+    pctMode = false,
+  } = props;
   if (!payload?.length) return null;
   return (
     <ul
@@ -523,6 +704,11 @@ function EnrolBreakdownLegendContent(props: {
     >
       {payload.map((entry, i) => {
         const label = String(entry.value ?? '');
+        const statY = stat ? statByCategory?.get(label) : undefined;
+        const displayLabel =
+          stat != null && statY != null
+            ? enrolBreakdownLegendEntryLabel(stat, label, statY, pctMode)
+            : label;
         const isSolo = soloCategory === label;
         const isDimmed = soloCategory !== null && !isSolo;
         return (
@@ -545,7 +731,7 @@ function EnrolBreakdownLegendContent(props: {
                 style={{ backgroundColor: entry.color }}
                 aria-hidden
               />
-              <span className="enrol-breakdown-legend-label">{label}</span>
+              <span className="enrol-breakdown-legend-label">{displayLabel}</span>
             </button>
           </li>
         );
@@ -720,6 +906,123 @@ function EnrolStackVolumeTopLabel(
   );
 }
 
+/** Hide inside-bar labels when a segment is less than this share of the month stack. */
+const ENROL_STACK_SEGMENT_LABEL_MIN_SHARE_PCT = 10;
+
+/** Month-stack share (0–100) for thresholding inside segment labels. */
+function enrolStackSegmentSharePct(
+  row: Record<string, unknown>,
+  segmentIndex: number,
+  chartView: 'monthly' | 'cumulative',
+  prevRow: Record<string, unknown> | undefined
+): number | null {
+  if (Boolean(row._enrolPctMode)) {
+    const segPct = Number(row[`_e${segmentIndex}`]);
+    return Number.isFinite(segPct) && segPct > 0 ? segPct : null;
+  }
+  const seg = Number(row[`_e${segmentIndex}`]);
+  if (!Number.isFinite(seg) || seg <= 0) return null;
+  const total = Number(row.volume);
+  if (chartView === 'cumulative' && prevRow) {
+    const prevSeg = Number(prevRow[`_e${segmentIndex}`]) || 0;
+    const prevTotal = Number(prevRow.volume) || 0;
+    const incSeg = seg - prevSeg;
+    const incTotal = total - prevTotal;
+    if (incSeg <= 0 || incTotal <= 0) return null;
+    return (incSeg / incTotal) * 100;
+  }
+  if (!Number.isFinite(total) || total <= 0) return null;
+  return (seg / total) * 100;
+}
+
+function EnrolStackSegmentInsideLabel(
+  props: {
+    x?: number | string;
+    y?: number | string;
+    width?: number | string;
+    height?: number | string;
+    viewBox?: {
+      x?: number | string;
+      y?: number | string;
+      width?: number | string;
+      height?: number | string;
+    };
+    payload?: Record<string, unknown>;
+    segmentIndex: number;
+    enrolmentYPercentTotal: boolean;
+    chartView: 'monthly' | 'cumulative';
+    displayData: ReadonlyArray<Record<string, string | number>>;
+  }
+) {
+  const {
+    x: xIn,
+    y: yIn,
+    width: wIn,
+    height: hIn,
+    viewBox,
+    payload,
+    segmentIndex,
+    enrolmentYPercentTotal,
+    chartView,
+    displayData,
+  } = props;
+  if (payload == null) return null;
+
+  const month = payload.month;
+  const idx =
+    typeof month === 'string'
+      ? displayData.findIndex((r) => r.month === month)
+      : -1;
+  const prevRow =
+    idx > 0
+      ? (displayData[idx - 1] as Record<string, unknown> | undefined)
+      : undefined;
+
+  const sharePct = enrolStackSegmentSharePct(
+    payload,
+    segmentIndex,
+    chartView,
+    prevRow
+  );
+  if (
+    sharePct == null ||
+    sharePct < ENROL_STACK_SEGMENT_LABEL_MIN_SHARE_PCT
+  ) {
+    return null;
+  }
+
+  const segVal = Number(payload[`_e${segmentIndex}`]);
+  if (!Number.isFinite(segVal) || segVal <= 0) return null;
+
+  const labelStr =
+    enrolmentYPercentTotal || Boolean(payload._enrolPctMode)
+      ? `${segVal.toFixed(1)}%`
+      : String(Math.round(segVal));
+
+  const x = rechartsGeomNumber(xIn ?? viewBox?.x);
+  const y = rechartsGeomNumber(yIn ?? viewBox?.y);
+  const width = rechartsGeomNumber(wIn ?? viewBox?.width);
+  const height = rechartsGeomNumber(hIn ?? viewBox?.height);
+  if (x === undefined || y === undefined || width === undefined || height === undefined) {
+    return null;
+  }
+  if (Math.abs(height) < 14) return null;
+
+  return (
+    <text
+      x={x + width / 2}
+      y={y + height / 2}
+      fill="#ffffff"
+      fontSize={9}
+      fontWeight={400}
+      textAnchor="middle"
+      dominantBaseline="middle"
+    >
+      {labelStr}
+    </text>
+  );
+}
+
 function enrolPctYAxisCeilPct(maxPct: number): number {
   if (!Number.isFinite(maxPct) || maxPct <= 0) return 1;
   let upper = Math.min(100, Math.ceil(maxPct * 1.06 * 10) / 10);
@@ -747,12 +1050,10 @@ function enrolChartRowsPercentTotal(
     useLegendBreakdown: boolean;
     chartView: 'monthly' | 'cumulative';
     categoryCount: number;
-    /** TG vs TW paired stacks (Medicine Program site stratify). */
-    siteSplitStacks?: boolean;
   }
 ): Array<Record<string, string | number>> {
   if (!rows.length) return [];
-  const { useLegendBreakdown, chartView, categoryCount, siteSplitStacks } = opts;
+  const { useLegendBreakdown, chartView, categoryCount } = opts;
 
   if (useLegendBreakdown) {
     return rows.map((row) => {
@@ -765,37 +1066,18 @@ function enrolChartRowsPercentTotal(
       if (denom <= 0) {
         out.volume = 0;
         for (let i = 0; i < categoryCount; i += 1) {
-          if (siteSplitStacks) {
-            out[`_raw_tg_e${i}`] = 0;
-            out[`_raw_tw_e${i}`] = 0;
-            out[`tg_e${i}`] = 0;
-            out[`tw_e${i}`] = 0;
-          } else {
-            out[`_raw_e${i}`] = 0;
-            out[`_e${i}`] = 0;
-          }
+          out[`_raw_e${i}`] = 0;
+          out[`_e${i}`] = 0;
         }
         return out;
       }
       let sumPct = 0;
       for (let i = 0; i < categoryCount; i += 1) {
-        if (siteSplitStacks) {
-          const rawTg = Number(row[`tg_e${i}`]) || 0;
-          const rawTw = Number(row[`tw_e${i}`]) || 0;
-          out[`_raw_tg_e${i}`] = rawTg;
-          out[`_raw_tw_e${i}`] = rawTw;
-          const pctTg = (rawTg / denom) * 100;
-          const pctTw = (rawTw / denom) * 100;
-          out[`tg_e${i}`] = pctTg;
-          out[`tw_e${i}`] = pctTw;
-          sumPct += pctTg + pctTw;
-        } else {
-          const raw = Number(row[`_e${i}`]) || 0;
-          out[`_raw_e${i}`] = raw;
-          const pct = (raw / denom) * 100;
-          out[`_e${i}`] = pct;
-          sumPct += pct;
-        }
+        const raw = Number(row[`_e${i}`]) || 0;
+        out[`_raw_e${i}`] = raw;
+        const pct = (raw / denom) * 100;
+        out[`_e${i}`] = pct;
+        sumPct += pct;
       }
       out.volume = sumPct;
       return out;
@@ -1686,23 +1968,30 @@ export default function App() {
   const [files, setFiles] = useState<Partial<Record<Slot, File>>>({});
   const [bundle, setBundle] = useState<AnalyticsBundle | null>(null);
   const [busy, setBusy] = useState(false);
-  const [active, setActive] = useState<'clinical' | 'experience' | 'linkage'>(
-    'clinical'
-  );
+  const [active, setActive] = useState<
+    'clinical' | 'kpis' | 'experience' | 'linkage'
+  >('clinical');
   const [selectedFiscalYearLabels, setSelectedFiscalYearLabels] = useState<string[]>([]);
   const [selectedQuarterLabels, setSelectedQuarterLabels] = useState<string[]>([]);
   const [selectedCarePaths, setSelectedCarePaths] = useState<string[]>([]);
   const [enrolmentChartView, setEnrolmentChartView] = useState<
     'monthly' | 'cumulative'
   >('monthly');
-  const [enrolmentLegendOn, setEnrolmentLegendOn] = useState(false);
-  const [medicineEnrolStratBySite, setMedicineEnrolStratBySite] = useState(false);
+  const [enrolmentStratifyBy, setEnrolmentStratifyBy] =
+    useState<EnrolmentStratifyBy | null>(null);
   const [enrolmentYPercentTotal, setEnrolmentYPercentTotal] = useState(false);
+  const [enrolmentShowStatistic, setEnrolmentShowStatistic] =
+    useState<EnrolmentShowStatistic | null>(null);
   const [enrolLegendSoloCategory, setEnrolLegendSoloCategory] = useState<string | null>(
     null
   );
-  const [ajmeraCarePathGroupMode, setAjmeraCarePathGroupMode] =
-    useState<AjmeraCarePathGroupMode>('organTypeNp');
+  const [patientCountSelectedPathways, setPatientCountSelectedPathways] =
+    useState<string[]>([]);
+  const [patientCountStratifyBy, setPatientCountStratifyBy] = useState<
+    'los' | null
+  >(null);
+  const [patientCountYPercentTotal, setPatientCountYPercentTotal] =
+    useState(false);
   const [supportLineMetricMode, setSupportLineMetricMode] =
     useState<SupportLineMetricMode>('total');
   const [checkInMetricMode, setCheckInMetricMode] =
@@ -2233,22 +2522,192 @@ export default function App() {
     return out;
   }, [bundle?.merged, selectedCarePaths, selectedReportingPeriods]);
 
-  const isMedicineProgramDeptOnlyCohort = useMemo(() => {
-    if (!selectedCarePaths.length) return false;
-    const depts = new Set(
-      selectedCarePaths.map((cp) =>
-        departmentForPathway(extractPathway(cp))
-      )
-    );
-    return depts.size === 1 && depts.has('Medicine Program');
-  }, [selectedCarePaths]);
+  const filteredEnrolmentMergedRows = useMemo((): MergedClinicalRow[] => {
+    if (!bundle?.merged.length || !selectedCarePaths.length) return [];
+    const out: MergedClinicalRow[] = [];
+    for (const r of bundle.merged) {
+      if (!isMrnHospDcDateMatch(r) || !r.hospDcDate) continue;
+      if (!selectedCarePaths.includes(r.carePath)) continue;
+      const periodKey = reportingPeriodKeyForDate(startOfMonth(r.hospDcDate));
+      if (!selectedReportingPeriods.includes(periodKey)) continue;
+      out.push(r);
+    }
+    return out;
+  }, [bundle?.merged, selectedCarePaths, selectedReportingPeriods]);
 
-  const medicineEnrolSiteStratifyEffective =
-    isMedicineProgramDeptOnlyCohort && medicineEnrolStratBySite;
+  const patientCountPathwayOptions = useMemo(() => {
+    if (!pathwayFilterGroups.length || !selectedCarePaths.length) return [];
+    const inCohort = new Set<string>();
+    for (const group of pathwayFilterGroups) {
+      if (
+        group.carePaths.some((entry) =>
+          selectedCarePaths.includes(entry.carePath)
+        )
+      ) {
+        inCohort.add(group.pathway);
+      }
+    }
+    return [...inCohort].sort((a, b) => a.localeCompare(b));
+  }, [pathwayFilterGroups, selectedCarePaths]);
 
   useEffect(() => {
-    if (!isMedicineProgramDeptOnlyCohort) setMedicineEnrolStratBySite(false);
-  }, [isMedicineProgramDeptOnlyCohort]);
+    if (!patientCountPathwayOptions.length) {
+      setPatientCountSelectedPathways((prev) => (prev.length ? [] : prev));
+      return;
+    }
+    setPatientCountSelectedPathways((prev) => {
+      const filtered = prev.filter((p) =>
+        patientCountPathwayOptions.includes(p)
+      );
+      const next = filtered.length
+        ? filtered
+        : [...patientCountPathwayOptions];
+      return sameValuesInSameOrder(prev, next) ? prev : next;
+    });
+  }, [patientCountPathwayOptions]);
+
+  const filteredPatientCountRows = useMemo((): MergedClinicalRow[] => {
+    if (
+      !bundle?.merged.length ||
+      !selectedCarePaths.length ||
+      !patientCountSelectedPathways.length
+    ) {
+      return [];
+    }
+    const pathwaySet = new Set(patientCountSelectedPathways);
+    const out: MergedClinicalRow[] = [];
+    for (const r of bundle.merged) {
+      if (!isMrnHospDcDateMatch(r)) continue;
+      if (!selectedCarePaths.includes(r.carePath)) continue;
+      if (!pathwaySet.has(extractPathway(r.carePath))) continue;
+      if (!r.indexDate) continue;
+      out.push(r);
+    }
+    return out;
+  }, [
+    bundle?.merged,
+    selectedCarePaths,
+    patientCountSelectedPathways,
+  ]);
+
+  const patientCountChartDays = useMemo((): Date[] => {
+    if (!filteredClinicalRollups.length) return [];
+    let minStart = filteredClinicalRollups[0]!.monthStart;
+    let maxStart = filteredClinicalRollups[0]!.monthStart;
+    for (const roll of filteredClinicalRollups) {
+      if (roll.monthStart < minStart) minStart = roll.monthStart;
+      if (roll.monthStart > maxStart) maxStart = roll.monthStart;
+    }
+    return enumerateCalendarDaysInclusive(minStart, lastDayOfMonth(maxStart));
+  }, [filteredClinicalRollups]);
+
+  const dailyActivePatientChartData = useMemo(
+    () =>
+      buildDailyActivePatientSeries(
+        filteredPatientCountRows,
+        patientCountChartDays
+      ),
+    [filteredPatientCountRows, patientCountChartDays]
+  );
+
+  const patientCountUseLosBreakdown = patientCountStratifyBy === 'los';
+
+  const dailyActivePatientLosChartData = useMemo(
+    () =>
+      patientCountUseLosBreakdown
+        ? buildDailyActivePatientLosStackSeries(
+            filteredPatientCountRows,
+            patientCountChartDays
+          )
+        : [],
+    [
+      patientCountUseLosBreakdown,
+      filteredPatientCountRows,
+      patientCountChartDays,
+    ]
+  );
+
+  const patientCountChartBaseData = patientCountUseLosBreakdown
+    ? dailyActivePatientLosChartData
+    : dailyActivePatientChartData;
+
+  const patientCountChartRenderData = useMemo((): Array<
+    Record<string, string | number>
+  > => {
+    if (!patientCountYPercentTotal || !patientCountStratifyBy) {
+      return patientCountChartBaseData as Array<Record<string, string | number>>;
+    }
+    if (patientCountUseLosBreakdown) {
+      const mapped = dailyActivePatientLosChartData.map((r) => ({
+        ...r,
+        month: r.dayLabel,
+      }));
+      return enrolChartRowsPercentTotal(mapped, {
+        useLegendBreakdown: true,
+        chartView: 'monthly',
+        categoryCount: PATIENT_COUNT_LOS_STRAT_LABELS.length,
+      }).map((r, i) => ({
+        ...mapped[i],
+        ...r,
+        dayLabel: r.month as string,
+      }));
+    }
+    const mapped = dailyActivePatientChartData.map((r) => ({
+      month: r.dayLabel,
+      dayLabel: r.dayLabel,
+      dayKey: r.dayKey,
+      volume: r.activeCount,
+    }));
+    return enrolChartRowsPercentTotal(mapped, {
+      useLegendBreakdown: false,
+      chartView: 'monthly',
+      categoryCount: 0,
+    }).map((r) => ({
+      dayLabel: r.month as string,
+      dayKey: (r as { dayKey?: string }).dayKey ?? '',
+      activeCount: Number(r.volume) || 0,
+      _raw_activeCount: r._raw_volume,
+    }));
+  }, [
+    patientCountYPercentTotal,
+    patientCountStratifyBy,
+    patientCountUseLosBreakdown,
+    patientCountChartBaseData,
+    dailyActivePatientLosChartData,
+    dailyActivePatientChartData,
+  ]);
+
+  const patientCountChartYMax = useMemo(() => {
+    if (!patientCountChartRenderData.length) return 1;
+    if (patientCountYPercentTotal && patientCountStratifyBy) {
+      if (patientCountUseLosBreakdown) return 100;
+      const maxVal = Math.max(
+        ...patientCountChartRenderData.map(
+          (p) => Number((p as { activeCount?: number }).activeCount) || 0
+        )
+      );
+      return enrolPctYAxisCeilPct(maxVal);
+    }
+    const maxVal = Math.max(
+      ...patientCountChartRenderData.map((p) =>
+        patientCountUseLosBreakdown
+          ? Number((p as { volume?: number }).volume) || 0
+          : Number((p as { activeCount?: number }).activeCount) || 0
+      )
+    );
+    return enrolmentChartYUpperBound(Math.max(1, maxVal));
+  }, [
+    patientCountChartRenderData,
+    patientCountYPercentTotal,
+    patientCountStratifyBy,
+    patientCountUseLosBreakdown,
+  ]);
+
+  useEffect(() => {
+    if (!patientCountStratifyBy && patientCountYPercentTotal) {
+      setPatientCountYPercentTotal(false);
+    }
+  }, [patientCountStratifyBy, patientCountYPercentTotal]);
 
   const enrolmentMonthlySeries = useMemo(
     () =>
@@ -2262,25 +2721,6 @@ export default function App() {
     [filteredClinicalRollups]
   );
 
-  const enrolmentMonthlySiteSplitSeries = useMemo(
-    () =>
-      filteredClinicalRollups.map((r) => {
-        let tgVol = 0;
-        let twVol = 0;
-        for (const s of r.byPathway) {
-          if (!selectedCarePaths.includes(s.carePath)) continue;
-          if (s.site === 'TG') tgVol += s.volume;
-          else if (s.site === 'TW') twVol += s.volume;
-        }
-        const month = r.monthStart.toLocaleString(undefined, {
-          month: 'short',
-          year: 'numeric',
-        });
-        return { month, tgVol, twVol, volume: tgVol + twVol };
-      }),
-    [filteredClinicalRollups, selectedCarePaths]
-  );
-
   type EnrolmentChartRow = Record<string, string | number> & {
     month: string;
     volume: number;
@@ -2289,46 +2729,6 @@ export default function App() {
   };
 
   const chartData: EnrolmentChartRow[] = useMemo(() => {
-    if (
-      medicineEnrolSiteStratifyEffective &&
-      !enrolmentLegendOn &&
-      enrolmentMonthlySiteSplitSeries.length
-    ) {
-      const src = enrolmentMonthlySiteSplitSeries;
-      if (enrolmentChartView === 'monthly') {
-        return src.map((row) => ({
-          month: row.month,
-          volume: row.tgVol + row.twVol,
-          tgVol: row.tgVol,
-          twVol: row.twVol,
-          priorCumulative: 0,
-          monthAdded: row.tgVol + row.twVol,
-        }));
-      }
-      let tgRunning = 0;
-      let twRunning = 0;
-      return src.map((row) => {
-        const ptg = tgRunning;
-        const ptw = twRunning;
-        const tgA = row.tgVol;
-        const twA = row.twVol;
-        tgRunning += tgA;
-        twRunning += twA;
-        const volSum = tgRunning + twRunning;
-        const priorCombined = ptg + ptw;
-        const monthCombined = tgA + twA;
-        return {
-          month: row.month,
-          volume: volSum,
-          priorTGCumulative: ptg,
-          tgMonthAdded: tgA,
-          priorTWCumulative: ptw,
-          twMonthAdded: twA,
-          priorCumulative: priorCombined,
-          monthAdded: monthCombined,
-        };
-      });
-    }
     if (enrolmentChartView === 'monthly') {
       return enrolmentMonthlySeries.map((row) => ({
         month: row.month,
@@ -2349,13 +2749,7 @@ export default function App() {
         monthAdded,
       };
     });
-  }, [
-    enrolmentMonthlySeries,
-    enrolmentMonthlySiteSplitSeries,
-    enrolmentChartView,
-    medicineEnrolSiteStratifyEffective,
-    enrolmentLegendOn,
-  ]);
+  }, [enrolmentMonthlySeries, enrolmentChartView]);
 
   const isAjmeraOnlyCohort = useMemo(
     () =>
@@ -2367,10 +2761,6 @@ export default function App() {
     [isAllProgramsCohort, selectedCarePaths]
   );
 
-  useEffect(() => {
-    if (!isAjmeraOnlyCohort) setAjmeraCarePathGroupMode('organTypeNp');
-  }, [isAjmeraOnlyCohort]);
-
   const enrolSingleDeptUsesCarePathLegend = useMemo(
     () =>
       !isAllProgramsCohort &&
@@ -2379,22 +2769,39 @@ export default function App() {
     [isAllProgramsCohort, selectedCarePaths]
   );
 
-  const ajmeraLegendEligible = useMemo(
-    () =>
-      enrolmentLegendOn &&
-      isAjmeraOnlyCohort &&
-      enrolSingleDeptUsesCarePathLegend,
-    [enrolmentLegendOn, isAjmeraOnlyCohort, enrolSingleDeptUsesCarePathLegend]
+  const enrolUsesAjmeraPathStratifyOptions = useMemo(
+    () => isAjmeraOnlyCohort && enrolSingleDeptUsesCarePathLegend,
+    [isAjmeraOnlyCohort, enrolSingleDeptUsesCarePathLegend]
   );
 
-  const prevAjmeraLegendEligibleRef = useRef(false);
-  useEffect(() => {
-    const prev = prevAjmeraLegendEligibleRef.current;
-    if (ajmeraLegendEligible && !prev) {
-      setAjmeraCarePathGroupMode('organTypeOnly');
+  const enrolStratifyOptions = useMemo((): readonly EnrolmentStratifyBy[] => {
+    if (enrolUsesAjmeraPathStratifyOptions) {
+      return [
+        'ajmeraOrganTypeNp',
+        'ajmeraOrganTypeOnly',
+        'ajmeraNpOnly',
+        'site',
+        'supportTier',
+      ];
     }
-    prevAjmeraLegendEligibleRef.current = ajmeraLegendEligible;
-  }, [ajmeraLegendEligible]);
+    return ['pathway', 'site', 'supportTier'];
+  }, [enrolUsesAjmeraPathStratifyOptions]);
+
+  useEffect(() => {
+    if (enrolUsesAjmeraPathStratifyOptions && enrolmentStratifyBy === 'pathway') {
+      setEnrolmentStratifyBy('ajmeraOrganTypeNp');
+    }
+  }, [enrolUsesAjmeraPathStratifyOptions, enrolmentStratifyBy]);
+
+  useEffect(() => {
+    if (
+      enrolmentStratifyBy &&
+      isAjmeraPathwayStratifyBy(enrolmentStratifyBy) &&
+      !enrolUsesAjmeraPathStratifyOptions
+    ) {
+      setEnrolmentStratifyBy(null);
+    }
+  }, [enrolUsesAjmeraPathStratifyOptions, enrolmentStratifyBy]);
 
   const enrolmentLegendAriaLabel = useMemo(() => {
     if (isAllProgramsCohort) return 'Enrolment chart: program legend';
@@ -2402,30 +2809,55 @@ export default function App() {
     return 'Enrolment chart: pathway legend';
   }, [isAllProgramsCohort, enrolSingleDeptUsesCarePathLegend]);
 
+  const enrolmentStratifyAriaLabel = useMemo(() => {
+    switch (enrolmentStratifyBy) {
+      case 'pathway':
+      case 'ajmeraOrganTypeNp':
+      case 'ajmeraOrganTypeOnly':
+      case 'ajmeraNpOnly':
+        return enrolmentLegendAriaLabel;
+      case 'site':
+        return 'Enrolment chart: site breakdown';
+      case 'supportTier':
+        return 'Enrolment chart: support tier breakdown';
+      default:
+        return 'Enrolment chart stratification';
+    }
+  }, [enrolmentStratifyBy, enrolmentLegendAriaLabel]);
+
+  const ajmeraPathwayStratCategoriesByMode = useMemo((): Record<
+    AjmeraCarePathGroupMode,
+    readonly string[]
+  > | null => {
+    if (!enrolUsesAjmeraPathStratifyOptions) return null;
+    const categoriesForMode = (mode: AjmeraCarePathGroupMode) =>
+      [
+        ...new Set(
+          selectedCarePaths.map((cp) =>
+            ajmeraEnrolCarePathCategoryKeyForMode(cp, mode)
+          )
+        ),
+      ].sort((a, b) => a.localeCompare(b));
+    return {
+      organTypeNp: categoriesForMode('organTypeNp'),
+      organTypeOnly: categoriesForMode('organTypeOnly'),
+      npOnly: categoriesForMode('npOnly'),
+    };
+  }, [enrolUsesAjmeraPathStratifyOptions, selectedCarePaths]);
+
   const ajmeraEnrolCarePathCategoryKey = useCallback(
     (carePath: string) => {
-      if (
-        !isAjmeraOnlyCohort ||
-        !enrolSingleDeptUsesCarePathLegend
-      ) {
+      if (!enrolUsesAjmeraPathStratifyOptions) {
         return carePath;
       }
-      if (ajmeraCarePathGroupMode === 'organTypeOnly') {
-        return ajmeraCollapseCarePathGroupKey(carePath);
-      }
-      if (ajmeraCarePathGroupMode === 'npOnly') {
-        return ajmeraNewPastOnlyGroupKey(carePath);
-      }
-      return carePath;
+      const mode = ajmeraCarePathGroupModeFromStratify(enrolmentStratifyBy);
+      if (!mode) return carePath;
+      return ajmeraEnrolCarePathCategoryKeyForMode(carePath, mode);
     },
-    [
-      isAjmeraOnlyCohort,
-      ajmeraCarePathGroupMode,
-      enrolSingleDeptUsesCarePathLegend,
-    ]
+    [enrolUsesAjmeraPathStratifyOptions, enrolmentStratifyBy]
   );
 
-  const enrolmentLegendCategories = useMemo(() => {
+  const pathwayStratCategories = useMemo(() => {
     if (!filteredClinicalRollups.length) return [];
     if (isAllProgramsCohort) {
       const seen = new Set<string>();
@@ -2456,29 +2888,109 @@ export default function App() {
     ajmeraEnrolCarePathCategoryKey,
   ]);
 
+  const siteStratCategories = useMemo(() => {
+    if (!filteredClinicalRollups.length) return [];
+    const seen = new Set<ClinicalSiteGroup>();
+    for (const roll of filteredClinicalRollups) {
+      for (const slice of roll.byPathway) {
+        seen.add(slice.site);
+      }
+    }
+    return SITE_STRATIFY_ORDER.filter((s) => seen.has(s));
+  }, [filteredClinicalRollups]);
+
+  const supportTierStratCategories = useMemo(() => {
+    const seen = new Set<string>();
+    for (const r of filteredEnrolmentMergedRows) {
+      seen.add(normalizeEnrolStratLabel(r.supportTier));
+    }
+    return [...seen].sort((a, b) => {
+      if (a === ENROL_STRAT_UNKNOWN) return 1;
+      if (b === ENROL_STRAT_UNKNOWN) return -1;
+      return a.localeCompare(b);
+    });
+  }, [filteredEnrolmentMergedRows]);
+
+  const enrolStratCategoriesByDimension: Record<
+    'pathway' | 'site' | 'supportTier',
+    readonly string[]
+  > = useMemo(
+    () => ({
+      pathway: pathwayStratCategories,
+      site: siteStratCategories,
+      supportTier: supportTierStratCategories,
+    }),
+    [
+      pathwayStratCategories,
+      siteStratCategories,
+      supportTierStratCategories,
+    ]
+  );
+
+  const enrolmentLegendCategories = useMemo(() => {
+    if (!enrolmentStratifyBy) return [];
+    if (isPathwayLikeEnrolStratifyBy(enrolmentStratifyBy)) {
+      return [...pathwayStratCategories];
+    }
+    return [...enrolStratCategoriesByDimension[enrolmentStratifyBy]];
+  }, [
+    enrolmentStratifyBy,
+    enrolStratCategoriesByDimension,
+    pathwayStratCategories,
+  ]);
+
   useEffect(() => {
     setEnrolLegendSoloCategory(null);
   }, [
-    enrolmentLegendOn,
+    enrolmentStratifyBy,
     isAllProgramsCohort,
     enrolSingleDeptUsesCarePathLegend,
     enrolmentLegendCategories.join('\u0001'),
   ]);
 
   const enrolmentMonthlyStackRows = useMemo(() => {
-    if (!filteredClinicalRollups.length || !enrolmentLegendCategories.length) return [];
+    if (!enrolmentStratifyBy || !enrolmentLegendCategories.length) return [];
     const monthLabelOf = (roll: { monthStart: Date }) =>
       roll.monthStart.toLocaleString(undefined, {
         month: 'short',
         year: 'numeric',
       });
 
+    if (enrolmentStratifyBy === 'supportTier') {
+      return filteredClinicalRollups.map((roll) => {
+        const row: Record<string, string | number> = {
+          month: monthLabelOf(roll),
+        };
+        enrolmentLegendCategories.forEach((_, i) => {
+          row[`_e${i}`] = 0;
+        });
+        let totalVol = 0;
+        for (const r of filteredEnrolmentMergedRows) {
+          if (!r.hospDcDate) continue;
+          if (monthKey(startOfMonth(r.hospDcDate)) !== roll.monthKey) continue;
+          const idx = enrolmentLegendCategories.indexOf(
+            normalizeEnrolStratLabel(r.supportTier)
+          );
+          if (idx < 0) continue;
+          row[`_e${idx}`] = Number(row[`_e${idx}`]) + 1;
+          totalVol += 1;
+        }
+        row.volume = totalVol;
+        return row;
+      });
+    }
+
+    if (!filteredClinicalRollups.length) return [];
+
     return filteredClinicalRollups.map((roll) => {
       const row: Record<string, string | number> = {
         month: monthLabelOf(roll),
       };
 
-      const catIdx = (slice: { carePath: string }) => {
+      const catIdx = (slice: { carePath: string; site: ClinicalSiteGroup }) => {
+        if (enrolmentStratifyBy === 'site') {
+          return enrolmentLegendCategories.indexOf(slice.site);
+        }
         const cat = isAllProgramsCohort
           ? departmentForPathway(extractPathway(slice.carePath))
           : enrolSingleDeptUsesCarePathLegend
@@ -2487,44 +2999,28 @@ export default function App() {
         return enrolmentLegendCategories.indexOf(cat);
       };
 
-      if (medicineEnrolSiteStratifyEffective) {
-        enrolmentLegendCategories.forEach((_, i) => {
-          row[`tg_e${i}`] = 0;
-          row[`tw_e${i}`] = 0;
-        });
-      } else {
-        enrolmentLegendCategories.forEach((_, i) => {
-          row[`_e${i}`] = 0;
-        });
-      }
+      enrolmentLegendCategories.forEach((_, i) => {
+        row[`_e${i}`] = 0;
+      });
 
       let totalVol = 0;
       for (const slice of roll.byPathway) {
         const idx = catIdx(slice);
         if (idx < 0) continue;
-        if (medicineEnrolSiteStratifyEffective) {
-          if (slice.site === 'TG') {
-            row[`tg_e${idx}`] = Number(row[`tg_e${idx}`]) + slice.volume;
-            totalVol += slice.volume;
-          } else if (slice.site === 'TW') {
-            row[`tw_e${idx}`] = Number(row[`tw_e${idx}`]) + slice.volume;
-            totalVol += slice.volume;
-          }
-        } else {
-          row[`_e${idx}`] = Number(row[`_e${idx}`]) + slice.volume;
-          totalVol += slice.volume;
-        }
+        row[`_e${idx}`] = Number(row[`_e${idx}`]) + slice.volume;
+        totalVol += slice.volume;
       }
       row.volume = totalVol;
       return row;
     });
   }, [
+    enrolmentStratifyBy,
     filteredClinicalRollups,
+    filteredEnrolmentMergedRows,
     enrolmentLegendCategories,
     isAllProgramsCohort,
     enrolSingleDeptUsesCarePathLegend,
     ajmeraEnrolCarePathCategoryKey,
-    medicineEnrolSiteStratifyEffective,
   ]);
 
   const enrolMonthlyStackEffective = useMemo(() => {
@@ -2541,67 +3037,41 @@ export default function App() {
       const next: Record<string, string | number> = {
         month: monthRow.month as string,
       };
-      if (medicineEnrolSiteStratifyEffective) {
-        enrolmentLegendCategories.forEach((_, i) => {
-          next[`tg_e${i}`] =
-            i === idx ? Number(monthRow[`tg_e${i}`]) || 0 : 0;
-          next[`tw_e${i}`] =
-            i === idx ? Number(monthRow[`tw_e${i}`]) || 0 : 0;
-        });
-        next.volume =
-          enrolmentLegendCategories.reduce(
-            (s, _, i) =>
-              s +
-              (Number(next[`tg_e${i}`]) || 0) +
-              (Number(next[`tw_e${i}`]) || 0),
-            0
-          ) || 0;
-      } else {
-        enrolmentLegendCategories.forEach((_, i) => {
-          next[`_e${i}`] =
-            i === idx ? Number(monthRow[`_e${i}`]) || 0 : 0;
-        });
-        next.volume =
-          enrolmentLegendCategories.reduce(
-            (s, _, i) => s + (Number(next[`_e${i}`]) || 0),
-            0
-          ) || 0;
-      }
+      enrolmentLegendCategories.forEach((_, i) => {
+        next[`_e${i}`] =
+          i === idx ? Number(monthRow[`_e${i}`]) || 0 : 0;
+      });
+      next.volume =
+        enrolmentLegendCategories.reduce(
+          (s, _, i) => s + (Number(next[`_e${i}`]) || 0),
+          0
+        ) || 0;
       return next;
     });
   }, [
     enrolLegendSoloCategory,
     enrolmentMonthlyStackRows,
     enrolmentLegendCategories,
-    medicineEnrolSiteStratifyEffective,
   ]);
 
   const enrolmentCumulativeStackEffective = useMemo(
     () =>
-      medicineEnrolSiteStratifyEffective
-        ? buildEnrolmentCumulativeSiteSplitStackRows(
-            enrolMonthlyStackEffective,
-            enrolmentLegendCategories.length
-          )
-        : buildEnrolmentCumulativeStackRows(
-            enrolMonthlyStackEffective,
-            enrolmentLegendCategories.length
-          ),
-    [
-      enrolMonthlyStackEffective,
-      enrolmentLegendCategories.length,
-      medicineEnrolSiteStratifyEffective,
-    ]
+      buildEnrolmentCumulativeStackRows(
+        enrolMonthlyStackEffective,
+        enrolmentLegendCategories.length
+      ),
+    [enrolMonthlyStackEffective, enrolmentLegendCategories.length]
   );
 
   const enrolUseLegendBreakdown =
-    enrolmentLegendOn && enrolmentLegendCategories.length > 0;
+    enrolmentStratifyBy !== null && enrolmentLegendCategories.length > 0;
 
   const enrolBreakdownLegendPayload = useMemo((): readonly EnrolLegendPayloadEntry[] => {
     if (!enrolUseLegendBreakdown || !enrolmentLegendCategories.length) return [];
     return enrolmentLegendCategories.map((cat, i) => {
       const ajmeraFill =
-        isAjmeraOnlyCohort && enrolSingleDeptUsesCarePathLegend
+        enrolUsesAjmeraPathStratifyOptions &&
+        isPathwayLikeEnrolStratifyBy(enrolmentStratifyBy)
           ? enrolAjmeraCarePathCategoryFill(cat)
           : null;
       const color =
@@ -2611,8 +3081,8 @@ export default function App() {
   }, [
     enrolUseLegendBreakdown,
     enrolmentLegendCategories,
-    isAjmeraOnlyCohort,
-    enrolSingleDeptUsesCarePathLegend,
+    enrolUsesAjmeraPathStratifyOptions,
+    enrolmentStratifyBy,
   ]);
 
   const enrolmentChartRenderData = enrolUseLegendBreakdown
@@ -2632,22 +3102,6 @@ export default function App() {
 
   const enrolmentChartDisplayData = useMemo(() => {
     if (!enrolmentYPercentTotal) return enrolmentChartRenderData;
-    if (medicineEnrolSiteStratifyEffective && enrolUseLegendBreakdown) {
-      return enrolChartRowsPercentTotal(enrolmentChartRenderData, {
-        useLegendBreakdown: true,
-        chartView: enrolmentChartView,
-        categoryCount: enrolmentLegendCategories.length,
-        siteSplitStacks: true,
-      });
-    }
-    if (
-      medicineEnrolSiteStratifyEffective &&
-      !enrolUseLegendBreakdown
-    ) {
-      return enrolmentChartView === 'monthly'
-        ? enrolPctSiteStratSimpleMonthly(enrolmentChartRenderData)
-        : enrolPctSiteStratSimpleCumulative(enrolmentChartRenderData);
-    }
     return enrolChartRowsPercentTotal(enrolmentChartRenderData, {
       useLegendBreakdown: enrolUseLegendBreakdown,
       chartView: enrolmentChartView,
@@ -2659,7 +3113,6 @@ export default function App() {
     enrolUseLegendBreakdown,
     enrolmentChartView,
     enrolmentLegendCategories.length,
-    medicineEnrolSiteStratifyEffective,
   ]);
 
   const enrolStackRowByMonthLabel = useMemo(() => {
@@ -2673,15 +3126,130 @@ export default function App() {
     return m;
   }, [enrolmentChartDisplayData]);
 
+  const enrolmentStatReferenceLines = useMemo((): EnrolStatReferenceLine[] => {
+    if (!enrolmentShowStatistic || !enrolmentChartDisplayData.length) return [];
+
+    const aggregate =
+      enrolmentShowStatistic === 'average' ? enrolNumericMean : enrolNumericMedian;
+
+    const valuesForKey = (key: string): number[] =>
+      enrolmentChartDisplayData
+        .map((row) => Number(row[key]))
+        .filter((n) => Number.isFinite(n));
+
+    const pushLine = (
+      lines: EnrolStatReferenceLine[],
+      y: number | null,
+      stroke: string,
+      key: string,
+      seriesLabel: string | null
+    ) => {
+      if (y == null || !Number.isFinite(y) || y <= 0) return;
+      lines.push({
+        y,
+        stroke,
+        key,
+        legendLabel: enrolStatLegendEntryLabel(
+          enrolmentShowStatistic,
+          seriesLabel,
+          y,
+          enrolmentYPercentTotal
+        ),
+      });
+    };
+
+    if (enrolUseLegendBreakdown) {
+      const lines: EnrolStatReferenceLine[] = [];
+      pushLine(
+        lines,
+        aggregate(valuesForKey('volume')),
+        ENROL_STAT_OVERALL_STROKE,
+        'overall',
+        'Overall'
+      );
+      return lines;
+    }
+
+    const lines: EnrolStatReferenceLine[] = [];
+    pushLine(
+      lines,
+      aggregate(valuesForKey('volume')),
+      ENROL_STAT_OVERALL_STROKE,
+      'volume',
+      null
+    );
+    return lines;
+  }, [
+    enrolmentShowStatistic,
+    enrolmentChartDisplayData,
+    enrolUseLegendBreakdown,
+    enrolmentYPercentTotal,
+  ]);
+
+  const enrolBreakdownStatByCategory = useMemo((): ReadonlyMap<string, number> => {
+    if (
+      !enrolUseLegendBreakdown ||
+      !enrolmentShowStatistic ||
+      !enrolmentChartDisplayData.length
+    ) {
+      return new Map();
+    }
+
+    const aggregate =
+      enrolmentShowStatistic === 'average' ? enrolNumericMean : enrolNumericMedian;
+
+    const valuesForKey = (key: string): number[] =>
+      enrolmentChartDisplayData
+        .map((row) => Number(row[key]))
+        .filter((n) => Number.isFinite(n));
+
+    const m = new Map<string, number>();
+    enrolmentLegendCategories.forEach((cat, i) => {
+      const y = aggregate(valuesForKey(`_e${i}`));
+      if (y != null && Number.isFinite(y) && y > 0) m.set(cat, y);
+    });
+    return m;
+  }, [
+    enrolUseLegendBreakdown,
+    enrolmentShowStatistic,
+    enrolmentChartDisplayData,
+    enrolmentLegendCategories,
+  ]);
+
+  const enrolmentStatLegendLines = useMemo((): EnrolStatReferenceLine[] => {
+    if (enrolUseLegendBreakdown && enrolmentShowStatistic) {
+      return enrolmentStatReferenceLines.filter((line) => line.key === 'overall');
+    }
+    return enrolmentStatReferenceLines;
+  }, [
+    enrolUseLegendBreakdown,
+    enrolmentShowStatistic,
+    enrolmentStatReferenceLines,
+  ]);
+
   const enrolmentYAxisMax = useMemo(() => {
     if (!enrolmentChartDisplayData.length) return 1;
-    if (enrolmentYPercentTotal && enrolUseLegendBreakdown) return 100;
-    if (enrolmentYPercentTotal && enrolmentChartView === 'cumulative') return 100;
+    const statYs = enrolmentStatReferenceLines.map((l) => l.y);
+    if (enrolmentYPercentTotal && enrolUseLegendBreakdown) {
+      const maxVal = Math.max(100, ...statYs);
+      return enrolPctYAxisCeilPct(maxVal);
+    }
+    if (enrolmentYPercentTotal && enrolmentChartView === 'cumulative') {
+      const maxVal = Math.max(
+        100,
+        ...enrolmentChartDisplayData.map(
+          (r) => Number((r as { volume?: number }).volume) || 0
+        ),
+        ...statYs
+      );
+      return enrolPctYAxisCeilPct(maxVal);
+    }
     const maxVal = Math.max(
       0,
       ...enrolmentChartDisplayData.map(
         (r) => Number((r as { volume?: number }).volume) || 0
-      )
+      ),
+      ...statYs
     );
     if (enrolmentYPercentTotal) return enrolPctYAxisCeilPct(maxVal);
     return enrolmentChartYUpperBound(maxVal);
@@ -2690,6 +3258,7 @@ export default function App() {
     enrolmentYPercentTotal,
     enrolUseLegendBreakdown,
     enrolmentChartView,
+    enrolmentStatReferenceLines,
   ]);
 
   const linkedCount = bundle?.linkage.linkedCount ?? 0;
@@ -2728,7 +3297,9 @@ export default function App() {
             <div className="header-uploads">
               {uploadLandingLayout && (
                 <div className="header-upload-slots">
-                  {brandMark}
+                  <p className="upload-landing-instructions">
+                    Upload all four files below, then select Generate analytics.
+                  </p>
                   {(Object.keys(SLOT_LABEL) as Slot[]).map((slot) => (
                     <label key={slot} className="header-upload">
                       <span className="header-upload-label">
@@ -2920,7 +3491,14 @@ export default function App() {
                   className={active === 'clinical' ? 'active' : ''}
                   onClick={() => setActive('clinical')}
                 >
-                  Clinical KPIs
+                  Operational Statistics
+                </button>
+                <button
+                  type="button"
+                  className={active === 'kpis' ? 'active' : ''}
+                  onClick={() => setActive('kpis')}
+                >
+                  KPIs
                 </button>
                 <button
                   type="button"
@@ -2951,84 +3529,46 @@ export default function App() {
               <div className="report">
                 <div className="report-enrol-chart">
                   <div className="card report-enrol-chart-card">
-                  <div className="report-chart-heading">
-                    <h3>Enrolment Volume</h3>
-                    <div className="report-chart-heading-controls">
-                      <div
-                        className="enrolment-view-toggle"
-                        role="group"
-                        aria-label="Enrolment volume display"
-                      >
-                        <button
-                          type="button"
-                          className={enrolmentChartView === 'monthly' ? 'active' : ''}
-                          aria-pressed={enrolmentChartView === 'monthly'}
-                          onClick={() => setEnrolmentChartView('monthly')}
-                        >
-                          Monthly
-                        </button>
-                        <button
-                          type="button"
-                          className={
-                            enrolmentChartView === 'cumulative' ? 'active' : ''
-                          }
-                          aria-pressed={enrolmentChartView === 'cumulative'}
-                          onClick={() => setEnrolmentChartView('cumulative')}
-                        >
-                          Cumulative
-                        </button>
-                      </div>
+                  <div className="report-enrol-chart-layout">
+                  <div className="report-enrol-chart-visual">
+                  <div className="report-chart-heading report-chart-heading--enrol">
+                    <div className="report-chart-heading-enrol-title">
+                      <h3>Enrolment Volume</h3>
+                      {enrolmentStatLegendLines.length > 0 && (
+                        <EnrolStatLegendContent lines={enrolmentStatLegendLines} />
+                      )}
                     </div>
+                    {enrolUseLegendBreakdown && (
+                      <EnrolBreakdownLegendContent
+                        payload={enrolBreakdownLegendPayload}
+                        soloCategory={enrolLegendSoloCategory}
+                        onToggleSolo={(label) =>
+                          setEnrolLegendSoloCategory((prev) =>
+                            prev === label ? null : label
+                          )
+                        }
+                        stat={enrolmentShowStatistic}
+                        statByCategory={enrolBreakdownStatByCategory}
+                        pctMode={enrolmentYPercentTotal}
+                      />
+                    )}
                   </div>
-                  <div className="chart-wrap chart-wrap--enrolment-side-controls">
-                  <div
-                    className="enrol-chart-side enrol-chart-side--left"
-                    role="presentation"
-                  >
-                    <div
-                      className="enrolment-view-toggle enrolment-view-toggle--stacked"
-                      role="group"
-                      aria-label="Enrolment Y-axis scale"
-                    >
-                      <button
-                        type="button"
-                        className={!enrolmentYPercentTotal ? 'active' : ''}
-                        aria-pressed={!enrolmentYPercentTotal}
-                        aria-label="Count"
-                        title="Count"
-                        onClick={() => setEnrolmentYPercentTotal(false)}
-                      >
-                        #
-                      </button>
-                      <button
-                        type="button"
-                        className={enrolmentYPercentTotal ? 'active' : ''}
-                        aria-pressed={enrolmentYPercentTotal}
-                        aria-label="Percent of total"
-                        title="Percent of total"
-                        onClick={() => setEnrolmentYPercentTotal(true)}
-                      >
-                        %
-                      </button>
-                    </div>
-                  </div>
+                  <div className="chart-wrap chart-wrap--enrolment-visual">
                   <div className="enrol-chart-main">
                   <ResponsiveContainer width="100%" height={280}>
                     <BarChart
                       data={enrolmentChartDisplayData}
-                      margin={{
-                        top: 20,
-                        right: 0,
-                        left: 0,
-                        bottom: 12,
-                      }}
+                      margin={ENROL_CHART_MARGINS}
                     >
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis
                         dataKey="month"
+                        angle={-45}
+                        textAnchor="end"
+                        height={56}
                         interval={0}
                         minTickGap={0}
-                        tickMargin={8}
+                        tickMargin={4}
                         tick={{ fontSize: 10 }}
                       />
                       <YAxis
@@ -3036,6 +3576,7 @@ export default function App() {
                         allowDecimals={enrolmentYPercentTotal}
                         tickCount={6}
                         tick={{ fontSize: 11 }}
+                        width={44}
                         niceTicks="adaptive"
                         tickFormatter={
                           enrolmentYPercentTotal
@@ -3058,142 +3599,112 @@ export default function App() {
                         )}
                       />
                       {enrolUseLegendBreakdown
-                        ? medicineEnrolSiteStratifyEffective
-                          ? enrolmentLegendCategories.flatMap((cat, i) => {
-                              const ajmeraFill =
-                                isAjmeraOnlyCohort &&
-                                enrolSingleDeptUsesCarePathLegend
-                                  ? enrolAjmeraCarePathCategoryFill(cat)
-                                  : null;
-                              const fill =
-                                ajmeraFill ??
-                                ENROL_LEGEND_PALETTE[
-                                  i % ENROL_LEGEND_PALETTE.length
-                                ];
-                              return [
-                                <Bar
-                                  key={`med-tg-${cat}`}
-                                  stackId="enrol-site-tg"
-                                  dataKey={`tg_e${i}`}
-                                  fill={fill}
-                                  name={`${cat} · TG`}
-                                />,
-                                <Bar
-                                  key={`med-tw-${cat}`}
-                                  stackId="enrol-site-tw"
-                                  dataKey={`tw_e${i}`}
-                                  fill={fill}
-                                  name={`${cat} · TW`}
-                                />,
-                              ];
-                            })
-                          : enrolmentLegendCategories.map((cat, i) => {
-                              const ajmeraFill =
-                                isAjmeraOnlyCohort &&
-                                enrolSingleDeptUsesCarePathLegend
-                                  ? enrolAjmeraCarePathCategoryFill(cat)
-                                  : null;
-                              return (
-                                <Bar
-                                  key={cat}
-                                  stackId="enrol"
-                                  dataKey={`_e${i}`}
-                                  fill={
-                                    ajmeraFill ??
-                                    ENROL_LEGEND_PALETTE[
-                                      i % ENROL_LEGEND_PALETTE.length
-                                    ]
-                                  }
-                                  name={cat}
-                                >
-                                  <LabelList
-                                    position="top"
-                                    offset={6}
-                                    valueAccessor={(entry) => {
-                                      const mon = (
-                                        entry as { payload?: { month?: unknown } }
-                                      ).payload?.month;
-                                      return typeof mon === 'string' ? mon : null;
-                                    }}
-                                    content={(lp) => {
-                                      const p = lp as Record<string, unknown>;
-                                      const row =
-                                        enrolStackLabelRowFromContentProps(
-                                          p,
-                                          enrolStackRowByMonthLabel
-                                        );
-                                      return (
-                                        <EnrolStackVolumeTopLabel
-                                          x={p.x as number | string | undefined}
-                                          y={
-                                            p.y as number | string | undefined
-                                          }
-                                          width={
-                                            p.width as number | string | undefined
-                                          }
-                                          payload={row}
-                                          segmentIndex={i}
-                                          categoryCount={
-                                            enrolmentLegendCategories.length
-                                          }
-                                          enrolmentYPercentTotal={
-                                            enrolmentYPercentTotal
-                                          }
-                                          pctGrandDenom={enrolmentPctGrandDenom}
-                                        />
+                        ? enrolmentLegendCategories.map((cat, i) => {
+                            const ajmeraFill =
+                              enrolUsesAjmeraPathStratifyOptions &&
+                              isPathwayLikeEnrolStratifyBy(enrolmentStratifyBy)
+                                ? enrolAjmeraCarePathCategoryFill(cat)
+                                : null;
+                            return (
+                              <Bar
+                                key={cat}
+                                stackId="enrol"
+                                dataKey={`_e${i}`}
+                                fill={
+                                  ajmeraFill ??
+                                  ENROL_LEGEND_PALETTE[
+                                    i % ENROL_LEGEND_PALETTE.length
+                                  ]
+                                }
+                                name={cat}
+                              >
+                                <LabelList
+                                  position="center"
+                                  valueAccessor={(entry) => {
+                                    const mon = (
+                                      entry as { payload?: { month?: unknown } }
+                                    ).payload?.month;
+                                    return typeof mon === 'string' ? mon : null;
+                                  }}
+                                  content={(lp) => {
+                                    const p = lp as Record<string, unknown> & {
+                                      viewBox?: {
+                                        x?: number | string;
+                                        y?: number | string;
+                                        width?: number | string;
+                                        height?: number | string;
+                                      };
+                                    };
+                                    const row =
+                                      enrolStackLabelRowFromContentProps(
+                                        p,
+                                        enrolStackRowByMonthLabel
                                       );
-                                    }}
-                                  />
-                                </Bar>
-                              );
-                            })
+                                    return (
+                                      <EnrolStackSegmentInsideLabel
+                                        x={p.x as number | string | undefined}
+                                        y={p.y as number | string | undefined}
+                                        width={
+                                          p.width as number | string | undefined
+                                        }
+                                        height={
+                                          p.height as number | string | undefined
+                                        }
+                                        viewBox={p.viewBox}
+                                        payload={row}
+                                        segmentIndex={i}
+                                        enrolmentYPercentTotal={
+                                          enrolmentYPercentTotal
+                                        }
+                                        chartView={enrolmentChartView}
+                                        displayData={enrolmentChartDisplayData}
+                                      />
+                                    );
+                                  }}
+                                />
+                                <LabelList
+                                  position="top"
+                                  offset={6}
+                                  valueAccessor={(entry) => {
+                                    const mon = (
+                                      entry as { payload?: { month?: unknown } }
+                                    ).payload?.month;
+                                    return typeof mon === 'string' ? mon : null;
+                                  }}
+                                  content={(lp) => {
+                                    const p = lp as Record<string, unknown>;
+                                    const row =
+                                      enrolStackLabelRowFromContentProps(
+                                        p,
+                                        enrolStackRowByMonthLabel
+                                      );
+                                    return (
+                                      <EnrolStackVolumeTopLabel
+                                        x={p.x as number | string | undefined}
+                                        y={
+                                          p.y as number | string | undefined
+                                        }
+                                        width={
+                                          p.width as number | string | undefined
+                                        }
+                                        payload={row}
+                                        segmentIndex={i}
+                                        categoryCount={
+                                          enrolmentLegendCategories.length
+                                        }
+                                        enrolmentYPercentTotal={
+                                          enrolmentYPercentTotal
+                                        }
+                                        pctGrandDenom={enrolmentPctGrandDenom}
+                                      />
+                                    );
+                                  }}
+                                />
+                              </Bar>
+                            );
+                          })
                         : enrolmentChartView === 'monthly'
-                          ? medicineEnrolSiteStratifyEffective
-                            ? (
-                                <>
-                                  <Bar
-                                    dataKey="tgVol"
-                                    fill="var(--accent)"
-                                    name="TG"
-                                  >
-                                    <LabelList
-                                      dataKey="tgVol"
-                                      position="top"
-                                      offset={6}
-                                      fill="#000000"
-                                      fontSize={12}
-                                      fontWeight={700}
-                                      formatter={(v: unknown) =>
-                                        enrolmentYPercentTotal &&
-                                        typeof v === 'number'
-                                          ? `${v.toFixed(1)}%`
-                                          : String(v ?? '')
-                                      }
-                                    />
-                                  </Bar>
-                                  <Bar
-                                    dataKey="twVol"
-                                    fill="#14b8a6"
-                                    name="TW"
-                                  >
-                                    <LabelList
-                                      dataKey="twVol"
-                                      position="top"
-                                      offset={6}
-                                      fill="#000000"
-                                      fontSize={12}
-                                      fontWeight={700}
-                                      formatter={(v: unknown) =>
-                                        enrolmentYPercentTotal &&
-                                        typeof v === 'number'
-                                          ? `${v.toFixed(1)}%`
-                                          : String(v ?? '')
-                                      }
-                                    />
-                                  </Bar>
-                                </>
-                              )
-                            : (
+                          ? (
                                 <Bar dataKey="volume" fill="var(--accent)">
                                   <LabelList
                                     dataKey="volume"
@@ -3211,36 +3722,7 @@ export default function App() {
                                   />
                                 </Bar>
                               )
-                          : medicineEnrolSiteStratifyEffective
-                            ? (
-                                <>
-                                  <Bar
-                                    dataKey="priorTGCumulative"
-                                    stackId="enrol-mt"
-                                    fill="var(--accent)"
-                                    name="TG through prior month"
-                                  />
-                                  <Bar
-                                    dataKey="tgMonthAdded"
-                                    stackId="enrol-mt"
-                                    fill="#0e749e"
-                                    name="TG added this month"
-                                  />
-                                  <Bar
-                                    dataKey="priorTWCumulative"
-                                    stackId="enrol-mw"
-                                    fill="#14b8a6"
-                                    name="TW through prior month"
-                                  />
-                                  <Bar
-                                    dataKey="twMonthAdded"
-                                    stackId="enrol-mw"
-                                    fill="#5eead4"
-                                    name="TW added this month"
-                                  />
-                                </>
-                              )
-                            : (
+                          : (
                                 <>
                                   <Bar
                                     dataKey="priorCumulative"
@@ -3290,136 +3772,435 @@ export default function App() {
                                   </Bar>
                                 </>
                               )}
+                      {enrolmentStatReferenceLines.map((line) => (
+                        <ReferenceLine
+                          key={line.key}
+                          y={line.y}
+                          stroke={line.stroke}
+                          strokeWidth={2.5}
+                          strokeDasharray="1.5 5"
+                          strokeLinecap="round"
+                          ifOverflow="extendDomain"
+                        />
+                      ))}
                     </BarChart>
                   </ResponsiveContainer>
-                  {isAjmeraOnlyCohort &&
-                    enrolSingleDeptUsesCarePathLegend &&
-                    enrolUseLegendBreakdown && (
-                      <div className="enrol-ajmera-path-group-wrap">
-                        <div
-                          className="enrolment-view-toggle enrol-ajmera-path-group-toggle"
-                          role="group"
-                          aria-label="Ajmera enrolment stacking: organ type with N versus P, organ type merged, or N versus P merged"
-                          title="Organ type + New/Past: one colour per pathway (includes N/P). Organ type only: merge paths that differ only by final N/P. New/Past only: all pathways ending in N stack as New, all ending in P as Past."
-                        >
-                          <button
-                            type="button"
-                            className={
-                              ajmeraCarePathGroupMode === 'organTypeNp'
-                                ? 'active'
-                                : ''
-                            }
-                            aria-pressed={
-                              ajmeraCarePathGroupMode === 'organTypeNp'
-                            }
-                            onClick={() =>
-                              setAjmeraCarePathGroupMode('organTypeNp')
-                            }
-                          >
-                            Organ Type + New/Past
-                          </button>
-                          <button
-                            type="button"
-                            className={
-                              ajmeraCarePathGroupMode === 'organTypeOnly'
-                                ? 'active'
-                                : ''
-                            }
-                            aria-pressed={
-                              ajmeraCarePathGroupMode === 'organTypeOnly'
-                            }
-                            onClick={() =>
-                              setAjmeraCarePathGroupMode('organTypeOnly')
-                            }
-                          >
-                            Organ Type
-                          </button>
-                          <button
-                            type="button"
-                            className={
-                              ajmeraCarePathGroupMode === 'npOnly' ? 'active' : ''
-                            }
-                            aria-pressed={ajmeraCarePathGroupMode === 'npOnly'}
-                            onClick={() =>
-                              setAjmeraCarePathGroupMode('npOnly')
-                            }
-                          >
-                            New/Past
-                          </button>
-                        </div>
-                      </div>
-                    )}
                   </div>
-                  <div
-                    className="enrol-chart-side enrol-chart-side--right"
-                    role="presentation"
-                  >
-                    <div className="enrol-chart-side-right-stack">
+                  </div>
+                  </div>
+                  <div className="report-enrol-chart-controls">
+                  <div className="report-enrol-chart-controls-grid">
+                    <EnrolChartControlRow label="Counting Method">
                       <div
-                        className="enrolment-legend-toggle enrolment-view-toggle"
-                        role="group"
-                        aria-label={enrolmentLegendAriaLabel}
+                        className="enrolment-view-toggle"
+                        role="radiogroup"
+                        aria-label="Enrolment volume counting method"
                       >
                         <button
                           type="button"
-                          className={!enrolmentLegendOn ? 'active' : ''}
-                          aria-pressed={!enrolmentLegendOn}
-                          onClick={() => setEnrolmentLegendOn(false)}
+                          role="radio"
+                          className={enrolmentChartView === 'monthly' ? 'active' : ''}
+                          aria-checked={enrolmentChartView === 'monthly'}
+                          onClick={() => setEnrolmentChartView('monthly')}
                         >
-                          Off
+                          Monthly
                         </button>
                         <button
                           type="button"
-                          className={enrolmentLegendOn ? 'active' : ''}
-                          aria-pressed={enrolmentLegendOn}
-                          onClick={() => setEnrolmentLegendOn(true)}
-                          disabled={!enrolmentLegendCategories.length}
+                          role="radio"
+                          className={
+                            enrolmentChartView === 'cumulative' ? 'active' : ''
+                          }
+                          aria-checked={enrolmentChartView === 'cumulative'}
+                          onClick={() => setEnrolmentChartView('cumulative')}
                         >
-                          Legend
+                          Cumulative
                         </button>
                       </div>
-                      {isMedicineProgramDeptOnlyCohort && (
-                        <div
-                          className="enrolment-view-toggle enrolment-view-toggle--stacked medicine-strat-toggle"
-                          role="group"
-                          aria-label="Stratify enrolment volumes by TG and TW columns"
-                          title="When on, enrolment stacks split into TG and TW side-by-side columns per month."
+                    </EnrolChartControlRow>
+                    <EnrolChartControlRow label="Y-Axis">
+                      <div
+                        className="enrolment-view-toggle"
+                        role="radiogroup"
+                        aria-label="Enrolment Y-axis scale"
+                      >
+                        <button
+                          type="button"
+                          role="radio"
+                          className={!enrolmentYPercentTotal ? 'active' : ''}
+                          aria-checked={!enrolmentYPercentTotal}
+                          aria-label="Count"
+                          title="Count"
+                          onClick={() => setEnrolmentYPercentTotal(false)}
                         >
+                          #
+                        </button>
+                        <button
+                          type="button"
+                          role="radio"
+                          className={enrolmentYPercentTotal ? 'active' : ''}
+                          aria-checked={enrolmentYPercentTotal}
+                          aria-label="Percent of total"
+                          title="Percent of total"
+                          onClick={() => setEnrolmentYPercentTotal(true)}
+                        >
+                          %
+                        </button>
+                      </div>
+                    </EnrolChartControlRow>
+                    <EnrolChartControlRow label="Stratify by">
+                      <div
+                        className="enrolment-view-toggle enrolment-view-toggle--vertical"
+                        role="radiogroup"
+                        aria-label={enrolmentStratifyAriaLabel}
+                      >
+                        {enrolStratifyOptions.map((value) => {
+                          const categoriesForValue = isAjmeraPathwayStratifyBy(
+                            value
+                          )
+                            ? (ajmeraPathwayStratCategoriesByMode?.[
+                                ajmeraCarePathGroupModeFromStratify(value)!
+                              ] ?? [])
+                            : enrolStratCategoriesByDimension[value];
+                          const disabled = !categoriesForValue.length;
+                          const disabledTitle = disabled
+                            ? isPathwayLikeEnrolStratifyBy(value)
+                              ? 'No pathway categories for the current filters'
+                              : value === 'site'
+                                ? 'No site categories for the current filters'
+                                : 'No support tier values in the VHA extract for the current filters'
+                            : undefined;
+                          return (
+                            <button
+                              key={value}
+                              type="button"
+                              role="radio"
+                              className={
+                                enrolmentStratifyBy === value ? 'active' : ''
+                              }
+                              aria-checked={enrolmentStratifyBy === value}
+                              disabled={disabled}
+                              title={disabledTitle}
+                              onClick={() =>
+                                setEnrolmentStratifyBy(
+                                  enrolmentStratifyBy === value ? null : value
+                                )
+                              }
+                            >
+                              {ENROL_STRATIFY_LABELS[value]}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </EnrolChartControlRow>
+                    <EnrolChartControlRow label="Show Statistics">
+                      <div
+                        className="enrolment-view-toggle enrolment-view-toggle--vertical"
+                        role="radiogroup"
+                        aria-label="Enrolment chart statistics overlay"
+                      >
+                        {(
+                          [
+                            'average',
+                            'median',
+                          ] as const
+                        ).map((value) => (
                           <button
+                            key={value}
                             type="button"
-                            className={!medicineEnrolStratBySite ? 'active' : ''}
-                            aria-pressed={!medicineEnrolStratBySite}
-                            onClick={() => setMedicineEnrolStratBySite(false)}
+                            role="radio"
+                            className={
+                              enrolmentShowStatistic === value ? 'active' : ''
+                            }
+                            aria-checked={enrolmentShowStatistic === value}
+                            onClick={() =>
+                              setEnrolmentShowStatistic(
+                                enrolmentShowStatistic === value ? null : value
+                              )
+                            }
                           >
-                            Off
+                            {value === 'average' ? 'Average' : 'Median'}
                           </button>
-                          <button
-                            type="button"
-                            className={medicineEnrolStratBySite ? 'active' : ''}
-                            aria-pressed={medicineEnrolStratBySite}
-                            onClick={() => setMedicineEnrolStratBySite(true)}
-                          >
-                            Site
-                          </button>
-                        </div>
-                      )}
-                      {enrolUseLegendBreakdown && (
-                        <EnrolBreakdownLegendContent
-                          variant="side"
-                          payload={enrolBreakdownLegendPayload}
-                          soloCategory={enrolLegendSoloCategory}
-                          onToggleSolo={(label) =>
-                            setEnrolLegendSoloCategory((prev) =>
-                              prev === label ? null : label
-                            )
-                          }
-                        />
+                        ))}
+                      </div>
+                    </EnrolChartControlRow>
+                  </div>
+                  </div>
+                  </div>
+                  </div>
+                  </div>
+                <div className="report-patient-count-chart">
+                  <div className="card report-enrol-chart-card">
+                  <div className="report-enrol-chart-layout">
+                  <div className="report-enrol-chart-visual">
+                  <div className="report-chart-heading report-chart-heading--enrol">
+                    <div className="report-chart-heading-enrol-title">
+                      <h3>Patient counts</h3>
+                      {patientCountUseLosBreakdown && (
+                        <ul
+                          className="enrol-stat-legend patient-count-los-legend"
+                          aria-label="LOS distribution legend"
+                        >
+                          {PATIENT_COUNT_LOS_STRAT_LABELS.map((label, i) => (
+                            <li key={label}>
+                              <span
+                                className="enrol-stat-legend-swatch patient-count-los-legend-swatch"
+                                style={{
+                                  borderTopColor: PATIENT_COUNT_LOS_COLORS[i],
+                                  borderTopStyle: 'solid',
+                                }}
+                                aria-hidden
+                              />
+                              <span className="enrol-stat-legend-label">
+                                {label}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
                       )}
                     </div>
                   </div>
-                </div>
+                  <div className="chart-wrap chart-wrap--enrolment-visual">
+                  <div className="enrol-chart-main">
+                  <ResponsiveContainer width="100%" height={280}>
+                    {patientCountUseLosBreakdown ? (
+                      <AreaChart
+                        data={patientCountChartRenderData}
+                        margin={ENROL_CHART_MARGINS}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="dayLabel"
+                          angle={-45}
+                          textAnchor="end"
+                          height={56}
+                          interval="preserveStartEnd"
+                          minTickGap={12}
+                          tickMargin={4}
+                          tick={{ fontSize: 10 }}
+                        />
+                        <YAxis
+                          domain={[0, patientCountChartYMax]}
+                          allowDecimals={patientCountYPercentTotal}
+                          tickCount={6}
+                          tick={{ fontSize: 11 }}
+                          width={44}
+                          niceTicks="adaptive"
+                          tickFormatter={
+                            patientCountYPercentTotal
+                              ? formatEnrolPctYAxisTick
+                              : undefined
+                          }
+                        />
+                        <Tooltip
+                          formatter={(value, name, item) => {
+                            const label = String(name ?? '');
+                            const idx = PATIENT_COUNT_LOS_STRAT_LABELS.findIndex(
+                              (l) => l === label
+                            );
+                            const payload = item?.payload as
+                              | Record<string, unknown>
+                              | undefined;
+                            const n =
+                              typeof value === 'number'
+                                ? value
+                                : Number(value) || 0;
+                            if (!patientCountYPercentTotal || idx < 0) {
+                              return [n, label];
+                            }
+                            const raw = Number(payload?.[`_raw_e${idx}`]) || 0;
+                            return [`${n.toFixed(1)}% (${raw})`, label];
+                          }}
+                        />
+                        {PATIENT_COUNT_LOS_STRAT_LABELS.map((label, i) => (
+                          <Area
+                            key={label}
+                            type="monotone"
+                            stackId="patientCountLos"
+                            dataKey={`_e${i}`}
+                            fill={PATIENT_COUNT_LOS_COLORS[i]}
+                            stroke={PATIENT_COUNT_LOS_COLORS[i]}
+                            strokeWidth={1}
+                            name={label}
+                          />
+                        ))}
+                      </AreaChart>
+                    ) : (
+                      <LineChart
+                        data={patientCountChartRenderData}
+                        margin={ENROL_CHART_MARGINS}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="dayLabel"
+                          angle={-45}
+                          textAnchor="end"
+                          height={56}
+                          interval="preserveStartEnd"
+                          minTickGap={12}
+                          tickMargin={4}
+                          tick={{ fontSize: 10 }}
+                        />
+                        <YAxis
+                          domain={[0, patientCountChartYMax]}
+                          allowDecimals={patientCountYPercentTotal}
+                          tickCount={6}
+                          tick={{ fontSize: 11 }}
+                          width={44}
+                          niceTicks="adaptive"
+                          tickFormatter={
+                            patientCountYPercentTotal
+                              ? formatEnrolPctYAxisTick
+                              : undefined
+                          }
+                        />
+                        <Tooltip
+                          formatter={(value, _name, item) => {
+                            const n =
+                              typeof value === 'number'
+                                ? value
+                                : Number(value) || 0;
+                            if (!patientCountYPercentTotal) {
+                              return [n, 'Active patients'];
+                            }
+                            const raw =
+                              Number(
+                                (
+                                  item?.payload as
+                                    | { _raw_activeCount?: number }
+                                    | undefined
+                                )?._raw_activeCount
+                              ) || 0;
+                            return [`${n.toFixed(1)}% (${raw})`, 'Active patients'];
+                          }}
+                          labelFormatter={(label) => String(label)}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="activeCount"
+                          name="Active patients"
+                          stroke="var(--accent)"
+                          strokeWidth={2}
+                          dot={false}
+                          activeDot={{ r: 4 }}
+                        />
+                      </LineChart>
+                    )}
+                  </ResponsiveContainer>
+                  </div>
+                  </div>
+                  </div>
+                  <div className="report-enrol-chart-controls">
+                  <div className="report-enrol-chart-controls-grid">
+                    <EnrolChartControlRow label="Pathway">
+                      <PathwayMultiSelect
+                        options={patientCountPathwayOptions}
+                        selected={patientCountSelectedPathways}
+                        onChange={setPatientCountSelectedPathways}
+                        ariaLabel="Patient count pathways"
+                      />
+                    </EnrolChartControlRow>
+                    <EnrolChartControlRow label={"Define 'Active' By"}>
+                      <div
+                        className="enrolment-view-toggle enrolment-view-toggle--vertical"
+                        role="radiogroup"
+                        aria-label="Enrolment status"
+                      >
+                        <button
+                          type="button"
+                          role="radio"
+                          className="active"
+                          aria-checked
+                        >
+                          Enrolment Status
+                        </button>
+                      </div>
+                    </EnrolChartControlRow>
+                    <EnrolChartControlRow label="Y-Axis">
+                      <div
+                        className="enrolment-view-toggle"
+                        role="radiogroup"
+                        aria-label="Patient count Y-axis scale"
+                      >
+                        <button
+                          type="button"
+                          role="radio"
+                          className={!patientCountYPercentTotal ? 'active' : ''}
+                          aria-checked={!patientCountYPercentTotal}
+                          aria-label="Count"
+                          title="Count"
+                          onClick={() => setPatientCountYPercentTotal(false)}
+                        >
+                          #
+                        </button>
+                        <button
+                          type="button"
+                          role="radio"
+                          className={
+                            patientCountYPercentTotal && patientCountStratifyBy
+                              ? 'active'
+                              : ''
+                          }
+                          aria-checked={
+                            patientCountYPercentTotal && !!patientCountStratifyBy
+                          }
+                          aria-label="Percent of total"
+                          title={
+                            patientCountStratifyBy
+                              ? 'Percent of total'
+                              : 'Select a stratification option to use percent scale'
+                          }
+                          disabled={!patientCountStratifyBy}
+                          onClick={() => {
+                            if (patientCountStratifyBy) {
+                              setPatientCountYPercentTotal(true);
+                            }
+                          }}
+                        >
+                          %
+                        </button>
+                      </div>
+                    </EnrolChartControlRow>
+                    <EnrolChartControlRow label="Stratify by">
+                      <div
+                        className="enrolment-view-toggle enrolment-view-toggle--vertical"
+                        role="radiogroup"
+                        aria-label="Patient count stratification"
+                      >
+                        <button
+                          type="button"
+                          role="radio"
+                          className={
+                            patientCountStratifyBy === 'los' ? 'active' : ''
+                          }
+                          aria-checked={patientCountStratifyBy === 'los'}
+                          onClick={() =>
+                            setPatientCountStratifyBy((prev) =>
+                              prev === 'los' ? null : 'los'
+                            )
+                          }
+                        >
+                          LOS
+                        </button>
+                      </div>
+                    </EnrolChartControlRow>
+                    <p className="patient-count-control-hint">
+                      Active on each day when index date is on or before that day
+                      and program discharge date is missing or after that day.
+                      {patientCountUseLosBreakdown
+                        ? ' With LOS stratification, each active patient is binned by days from index date to that day.'
+                        : ' Counts use index and program discharge dates, not enroll status.'}
+                    </p>
+                  </div>
+                  </div>
+                  </div>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {active === 'kpis' && (
+              <div className="report">
                 <div className="clinical-kpi-chart-rows">
                   <div className="cards report-clinical-kpi-cards">
                     <ClinicalMonthlyPctTrendCard

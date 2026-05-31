@@ -28,6 +28,28 @@ const VHA_KEYS = {
   iclAddl: ['# ICL Call (ADDL)', 'ADDL ICL CALL'],
   vhaCall: ['# VHA Call'],
   enroll: ['ENROLL STATUS'],
+  indexDate: ['INDEX DATE', 'Index Date'],
+  progDc: [
+    'PROG DC DATE',
+    'PROG DC',
+    'PROGRAM DC DATE',
+    'PROGRAM DISCHARGE DATE',
+  ],
+  supportTier: [
+    'SUPPORT TIER',
+    'Support Tier',
+    'SUPPORT TIER LEVEL',
+    'Support Tier Level',
+  ],
+  icLead: [
+    'IC LEAD',
+    'IC Lead',
+    'IC LEAD NAME',
+    'IC Lead Name',
+    'PRIMARY IC LEAD',
+    'ICL',
+    'ICL NAME',
+  ],
 } as const;
 
 const FS_KEYS = {
@@ -106,6 +128,14 @@ export function recodeHospitalSiteString(raw: string): string {
   return t;
 }
 
+/** VHA support tier codes must start with ST-; otherwise treated as missing. */
+export function recodeSupportTierString(raw: string): string {
+  const t = raw.trim();
+  if (!t) return '';
+  if (!t.toUpperCase().startsWith('ST-')) return '';
+  return t;
+}
+
 /** Drops Flowsheet rows that should not participate in linkage (eligibility, re-admits, blank DC). */
 export function filterFlowsheetRows(
   rows: Record<string, unknown>[]
@@ -171,6 +201,8 @@ export function mergeVhaFlowsheet(
 
     const carePath = String(pick(row, VHA_KEYS.carePath) ?? '').trim();
     const enrollDate = parseExcelDate(pick(row, VHA_KEYS.enrollDate));
+    const indexDate = parseExcelDate(pick(row, VHA_KEYS.indexDate));
+    const progDcDate = parseExcelDate(pick(row, VHA_KEYS.progDc));
     const hospDcDate = parseExcelDate(pick(row, VHA_KEYS.hospDc));
     const monthSource = enrollDate ?? hospDcDate;
     const monthBucket = monthSource
@@ -200,6 +232,12 @@ export function mergeVhaFlowsheet(
       supportLineCalls: num(pick(row, VHA_KEYS.supportLine)),
       scheduledCheckInCalls,
       enrollStatus: String(pick(row, VHA_KEYS.enroll) ?? '').trim(),
+      indexDate,
+      progDcDate,
+      supportTier: recodeSupportTierString(
+        String(pick(row, VHA_KEYS.supportTier) ?? '')
+      ),
+      icLead: String(pick(row, VHA_KEYS.icLead) ?? '').trim(),
       hospitalSite: hospitalSite || null,
       flowsheetMatchDaysDelta: deltaDays,
     });
