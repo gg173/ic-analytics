@@ -7,6 +7,10 @@ import type {
   IclDecision,
 } from '../types';
 import {
+  buildSsdbAbsenceDischargeUpdate,
+  enrollIdsAbsentFromSsdbUpload,
+} from '../ingest/ssdbReconciliation';
+import {
   countStrategyBreakdown,
   DISCHARGE_STRATEGY,
   EPISODE_CONVERSION_STRATEGY,
@@ -25,11 +29,17 @@ export interface DischargeDetailsUpdate {
 
 const INSERT_CHUNK = 400;
 const ENROLL_ID_LOOKUP_CHUNK = 500;
+export interface EpicConversionInsertOptions {
+  /** When set, enrollees missing from this upload are auto-discharged (SSDB only). */
+  ssdbUploadEnrollIds?: ReadonlySet<string>;
+  dischargedBy?: string;
+}
 
 export interface EpicConversionInsertResult {
   error: string | null;
   inserted: number;
   skippedDuplicates: number;
+  autoDischarged: number;
   strategyBreakdown: StrategyBreakdown;
 }
 
@@ -60,7 +70,54 @@ export function useEpicConversionRecords() {
     void refresh();
   }, [refresh]);
 
-  const insertRows = useCallback(async (rows: EpicConversionInsertRow[], importedBy?: string | null): Promise<EpicConversionInsertResult> => {
+  const dischargeAbsentFromSsdbUpload = useCallback(
+    async (
+      uploadEnrollIds: ReadonlySet<string>,
+      dischargedBy: string
+    ): Promise<{ error: string | null; count: number }> => {
+      const { data, error: fetchError } = await supabase
+        .from('epic_conversion_records')
+        .select('id, enroll_id, lvd, hosp_dc_date, registration_date, pathway')
+        .not('enroll_id', 'is', null)
+        .is('status', null);
+
+      if (fetchError) return { error: fetchError.message, count: 0 };
+
+      const activeRecords = (data ?? []) as Pick<
+        EpicConversionRecord,
+        'id' | 'enroll_id' | 'lvd' | 'hosp_dc_date' | 'registration_date' | 'pathway'
+      >[];
+      const absentEnrollIds = enrollIdsAbsentFromSsdbUpload(activeRecords, uploadEnrollIds);
+      if (!absentEnrollIds.length) return { error: null, count: 0 };
+
+      const absentEnrollIdSet = new Set(absentEnrollIds);
+      const recordsToDischarge = activeRecords.filter(
+        (r) => r.enroll_id && absentEnrollIdSet.has(r.enroll_id)
+      );
+      const dischargedAt = new Date().toISOString();
+      let count = 0;
+
+      for (const record of recordsToDischarge) {
+        const update = buildSsdbAbsenceDischargeUpdate(record, dischargedBy, dischargedAt);
+        const { error: updateError } = await supabase
+          .from('epic_conversion_records')
+          .update(update)
+          .eq('id', record.id);
+
+        if (updateError) return { error: updateError.message, count };
+        count += 1;
+      }
+
+      return { error: null, count };
+    },
+    []
+  );
+
+  const insertRows = useCallback(async (
+    rows: EpicConversionInsertRow[],
+    importedBy?: string | null,
+    options?: EpicConversionInsertOptions
+  ): Promise<EpicConversionInsertResult> => {
     const enrollIds = [
       ...new Set(rows.map((row) => row.enroll_id).filter((id): id is string => !!id)),
     ];
@@ -78,6 +135,7 @@ export function useEpicConversionRecords() {
           error: lookupError.message,
           inserted: 0,
           skippedDuplicates: 0,
+          autoDischarged: 0,
           strategyBreakdown: countStrategyBreakdown([]),
         };
       }
@@ -91,44 +149,58 @@ export function useEpicConversionRecords() {
     );
     const skippedDuplicates = rows.length - rowsToInsert.length;
 
-    if (!rowsToInsert.length) {
-      return {
-        error: null,
-        inserted: 0,
-        skippedDuplicates,
-        strategyBreakdown: countStrategyBreakdown([]),
-      };
-    }
-
-    // Stamp every chunk with one shared timestamp so a single upload groups as
-    // one import in the UI (rather than one per 400-row chunk).
-    const importedAt = new Date().toISOString();
-    for (let i = 0; i < rowsToInsert.length; i += INSERT_CHUNK) {
-      const chunk = rowsToInsert
-        .slice(i, i + INSERT_CHUNK)
-        .map((row) => ({
-          ...row,
-          imported_at: importedAt,
-          imported_by: importedBy ?? null,
-        }));
-      const { error: insertError } = await supabase.from('epic_conversion_records').insert(chunk);
-      if (insertError) {
-        return {
-          error: insertError.message,
-          inserted: 0,
-          skippedDuplicates,
-          strategyBreakdown: countStrategyBreakdown([]),
-        };
+    if (rowsToInsert.length) {
+      // Stamp every chunk with one shared timestamp so a single upload groups as
+      // one import in the UI (rather than one per 400-row chunk).
+      const importedAt = new Date().toISOString();
+      for (let i = 0; i < rowsToInsert.length; i += INSERT_CHUNK) {
+        const chunk = rowsToInsert
+          .slice(i, i + INSERT_CHUNK)
+          .map((row) => ({
+            ...row,
+            imported_at: importedAt,
+            imported_by: importedBy ?? null,
+          }));
+        const { error: insertError } = await supabase.from('epic_conversion_records').insert(chunk);
+        if (insertError) {
+          return {
+            error: insertError.message,
+            inserted: 0,
+            skippedDuplicates,
+            autoDischarged: 0,
+            strategyBreakdown: countStrategyBreakdown([]),
+          };
+        }
       }
     }
+
+    let autoDischarged = 0;
+    if (options?.ssdbUploadEnrollIds && options.dischargedBy) {
+      const { error: reconcileError, count } = await dischargeAbsentFromSsdbUpload(
+        options.ssdbUploadEnrollIds,
+        options.dischargedBy
+      );
+      if (reconcileError) {
+        return {
+          error: reconcileError,
+          inserted: rowsToInsert.length,
+          skippedDuplicates,
+          autoDischarged: 0,
+          strategyBreakdown: countStrategyBreakdown(rowsToInsert),
+        };
+      }
+      autoDischarged = count;
+    }
+
     await refresh();
     return {
       error: null,
       inserted: rowsToInsert.length,
       skippedDuplicates,
+      autoDischarged,
       strategyBreakdown: countStrategyBreakdown(rowsToInsert),
     };
-  }, [refresh]);
+  }, [dischargeAbsentFromSsdbUpload, refresh]);
 
   const setIclDecision = useCallback(
     async (id: string, decision: IclDecision, decisionBy: string | null) => {

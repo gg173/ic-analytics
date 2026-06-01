@@ -1,11 +1,13 @@
 import * as XLSX from 'xlsx';
-import { pick, str, parseDate } from '../ingest/mapEpicConversionRow';
+import { pick, str } from './mapEpicConversionRow';
+import { mapEpicEpisodeToVhaPathway } from '../reconciliation/epicPathwayMap';
 
 export interface EpicReportParseRow {
-  enroll_id: string | null;
+  patient_name: string | null;
   mrn: string;
+  epic_episode: string | null;
+  /** VHA pathway code mapped from Epic episode, when known. */
   pathway: string | null;
-  hosp_dc_date: string | null;
   ic_lead: string | null;
   row_index: number;
 }
@@ -13,6 +15,7 @@ export interface EpicReportParseRow {
 export interface EpicReportParseResult {
   rows: EpicReportParseRow[];
   skipped: number;
+  unmappedEpisodes: string[];
   errors: string[];
 }
 
@@ -59,12 +62,26 @@ function mapReportRow(row: Record<string, unknown>, rowIndex: number): EpicRepor
   const mrn = str(pick(row, ['MRN', 'mrn']));
   if (!mrn) return null;
 
+  const epicEpisode = str(
+    pick(row, ['Episode', 'EPISODE', 'episode', 'PATHWAY', 'pathway'])
+  );
+  const icLead = str(
+    pick(row, [
+      'ICL/HCS Assigned',
+      'ICL / HCS Assigned',
+      'ICL HCS Assigned',
+      'IC LEAD',
+      'IC_LEAD',
+      'ic lead',
+    ])
+  );
+
   return {
-    enroll_id: str(pick(row, ['ENROLL ID', 'ENROLL_ID', 'enroll id'])),
+    patient_name: str(pick(row, ['Patient', 'PATIENT', 'patient'])),
     mrn,
-    pathway: str(pick(row, ['PATHWAY', 'pathway'])),
-    hosp_dc_date: parseDate(pick(row, ['HOSP DC DATE', 'HOSP_DC_DATE', 'hosp dc date'])),
-    ic_lead: str(pick(row, ['IC LEAD', 'IC_LEAD', 'ic lead'])),
+    epic_episode: epicEpisode,
+    pathway: mapEpicEpisodeToVhaPathway(epicEpisode),
+    ic_lead: icLead,
     row_index: rowIndex,
   };
 }
@@ -75,26 +92,36 @@ export function parseEpicConversionReportBuffer(buf: ArrayBuffer): EpicReportPar
 
   if (!parsed.rows.length) {
     errors.push('No data rows found in the spreadsheet');
-    return { rows: [], skipped: 0, errors };
+    return { rows: [], skipped: 0, unmappedEpisodes: [], errors };
   }
 
   const hasMrn = parsed.headers.some((h) => h.trim().toLowerCase().replace(/\s+/g, ' ') === 'mrn');
   if (!hasMrn) {
     errors.push('Missing required column: MRN');
-    return { rows: [], skipped: 0, errors };
+    return { rows: [], skipped: 0, unmappedEpisodes: [], errors };
   }
 
   const rows: EpicReportParseRow[] = [];
+  const unmappedEpisodeSet = new Set<string>();
   let skipped = 0;
+
   for (let i = 0; i < parsed.rows.length; i += 1) {
     const mapped = mapReportRow(parsed.rows[i], i + 2);
-    if (mapped) rows.push(mapped);
-    else skipped += 1;
+    if (mapped) {
+      rows.push(mapped);
+      if (mapped.epic_episode && !mapped.pathway) {
+        unmappedEpisodeSet.add(mapped.epic_episode);
+      }
+    } else {
+      skipped += 1;
+    }
   }
 
   if (!rows.length) {
     errors.push('No valid rows (each row needs an MRN)');
   }
 
-  return { rows, skipped, errors };
+  const unmappedEpisodes = [...unmappedEpisodeSet].sort((a, b) => a.localeCompare(b));
+
+  return { rows, skipped, unmappedEpisodes, errors };
 }

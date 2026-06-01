@@ -169,6 +169,15 @@ export function formatChartDayLabel(dayIso: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+export function formatChartDayLabelParts(dayIso: string): { month: string; day: string } {
+  const d = new Date(`${dayIso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return { month: dayIso, day: '' };
+  return {
+    month: d.toLocaleDateString('en-US', { month: 'short' }),
+    day: d.toLocaleDateString('en-US', { day: 'numeric' }),
+  };
+}
+
 export function formatChartAxisDay(dayIso: string): string {
   const d = new Date(`${dayIso}T12:00:00`);
   if (Number.isNaN(d.getTime())) return dayIso;

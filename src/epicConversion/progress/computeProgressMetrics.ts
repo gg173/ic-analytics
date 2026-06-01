@@ -12,6 +12,7 @@ export interface BucketMetrics {
   pending: number;
   complete: number;
   percentComplete: number;
+  validatedComplete?: number;
 }
 
 export interface IclBucketMetrics {
@@ -57,10 +58,12 @@ function daysUntilGoLive(referenceDate: Date = new Date()): number | null {
 
 export function computeProgressMetrics(
   records: EpicConversionRecord[],
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  validatedRecordIds?: ReadonlySet<string>
 ): ProgressMetrics {
   let episodeTotal = 0;
   let episodePending = 0;
+  let episodeValidatedComplete = 0;
   let dischargeTotal = 0;
   let dischargePending = 0;
   let iclDecisionRequired = 0;
@@ -71,6 +74,7 @@ export function computeProgressMetrics(
     if (recordBelongsToStrategyTab(r, EPISODE_CONVERSION_STRATEGY)) {
       episodeTotal += 1;
       if (!r.completed_at) episodePending += 1;
+      else if (validatedRecordIds?.has(r.id)) episodeValidatedComplete += 1;
     }
     if (recordBelongsToStrategyTab(r, DISCHARGE_STRATEGY)) {
       dischargeTotal += 1;
@@ -96,7 +100,10 @@ export function computeProgressMetrics(
     accounted,
     pending,
     percentAccounted: totalRecords > 0 ? Math.round((accounted / totalRecords) * 100) : 0,
-    episodeConversion: bucketMetrics(episodeTotal, episodePending),
+    episodeConversion: {
+      ...bucketMetrics(episodeTotal, episodePending),
+      validatedComplete: validatedRecordIds ? episodeValidatedComplete : undefined,
+    },
     iclReassessment: {
       decisionRequired: iclDecisionRequired,
       decidedConvert: iclDecidedConvert,

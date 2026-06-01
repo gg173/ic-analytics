@@ -1,4 +1,21 @@
-export type ReconciliationOutcome = 'perfect' | 'incorrect' | 'unmatched';
+export type ReconciliationOutcome =
+  | 'validated'
+  | 'status_discrepancy'
+  | 'field_discrepancy'
+  | 'unmatched'
+  | 'missing_from_epic'
+  /** @deprecated Legacy imports only */
+  | 'perfect'
+  /** @deprecated Legacy imports only */
+  | 'incorrect';
+
+export type ReconciliationOutcomeFilter =
+  | 'all'
+  | 'validated'
+  | 'status_discrepancy'
+  | 'field_discrepancy'
+  | 'unmatched'
+  | 'missing_from_epic';
 
 export interface EpicConversionReportImport {
   id: string;
@@ -12,7 +29,8 @@ export interface EpicConversionReportImport {
 export interface EpicConversionReportRow {
   id: string;
   import_id: string;
-  enroll_id: string | null;
+  patient_name: string | null;
+  epic_episode: string | null;
   mrn: string;
   pathway: string | null;
   hosp_dc_date: string | null;
@@ -36,40 +54,47 @@ export interface ReconciliationSummary {
   filename: string;
   importedAt: string;
   totalRows: number;
-  perfect: number;
-  incorrect: number;
+  validated: number;
+  statusDiscrepancy: number;
+  fieldDiscrepancy: number;
   unmatched: number;
+  missingFromEpic: number;
 }
 
 export interface ReconciliationDetailRow {
   reportRowId: string;
   rowIndex: number;
+  patientName: string | null;
   mrn: string;
+  epicEpisode: string | null;
   pathway: string | null;
-  hospDcDate: string | null;
   icLead: string | null;
   outcome: ReconciliationOutcome;
   fieldDiscrepancies: string[];
   matchedRecordId: string | null;
   matchedMrn: string | null;
   matchedPathway: string | null;
-  matchedHospDcDate: string | null;
   matchedIcLead: string | null;
+  matchedWorkflowStatus: string | null;
+  epicImportFilename: string | null;
 }
 
 export const RECONCILIATION_OUTCOME_LABELS: Record<ReconciliationOutcome, string> = {
-  perfect: 'Perfect Conversion',
-  incorrect: 'Incorrect Conversion',
-  unmatched: 'Unmatched Conversion',
+  validated: 'Validated',
+  status_discrepancy: 'Status Discrepancy',
+  field_discrepancy: 'Field Discrepancy',
+  unmatched: 'Unmatched',
+  missing_from_epic: 'Missing from Epic',
+  perfect: 'Validated',
+  incorrect: 'Field Discrepancy',
 };
 
-export const RECONCILIATION_COMPARE_FIELDS = ['mrn', 'pathway', 'hosp_dc_date', 'ic_lead'] as const;
+export const RECONCILIATION_COMPARE_FIELDS = ['mrn', 'pathway', 'ic_lead'] as const;
 
 export type ReconciliationCompareField = (typeof RECONCILIATION_COMPARE_FIELDS)[number];
 
 export const RECONCILIATION_FIELD_LABELS: Record<ReconciliationCompareField, string> = {
   mrn: 'MRN',
   pathway: 'Pathway',
-  hosp_dc_date: 'Hosp DC Date',
   ic_lead: 'IC Lead',
 };

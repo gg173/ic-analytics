@@ -1,35 +1,23 @@
 import type { BatchUploader } from '../../homecare/types';
 import { uploaderLabel } from '../../homecare/hooks/useBatch';
-import type { ImportActivityRow } from '../progress/computeImportActivity';
-import { formatStrategyBreakdown } from '../progress/computeImportActivity';
+import {
+  DISCHARGE_STRATEGY,
+  EPISODE_CONVERSION_STRATEGY,
+  ICL_REASSESSMENT_STRATEGY,
+} from '../progress/recordStrategyTabs';
+import {
+  formatUnifiedImportResults,
+  uploadTypeLabel,
+  type UnifiedImportActivityRow,
+} from '../progress/computeUnifiedImportActivity';
 import type { DailyProgressSnapshot } from '../progress/computeDailyProgressSeries';
 import type { ProgressMetrics } from '../progress/computeProgressMetrics';
 import { DailyProgressChart } from './DailyProgressChart';
-import {
-  RECONCILIATION_FIELD_LABELS,
-  RECONCILIATION_OUTCOME_LABELS,
-  type ReconciliationCompareField,
-  type ReconciliationDetailRow,
-  type ReconciliationOutcome,
-  type ReconciliationSummary,
-} from '../reconciliation/types';
-import type { EpicConversionReportImport } from '../reconciliation/types';
 
-function formatDate(value: string | null): string {
-  if (!value) return '—';
-  const d = new Date(value + 'T12:00:00');
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleDateString('en-US', {
-    month: 'short',
-    day: '2-digit',
-    year: 'numeric',
-  });
-}
-
-function formatImportMeta(uploaderName: string, importedAt: string): string {
+function formatImportTimestamp(importedAt: string): string {
   const d = new Date(importedAt);
   if (Number.isNaN(d.getTime())) {
-    return `Uploaded by ${uploaderName} on ${importedAt}`;
+    return importedAt;
   }
   const date = d.toLocaleDateString('en-US', {
     weekday: 'short',
@@ -39,31 +27,114 @@ function formatImportMeta(uploaderName: string, importedAt: string): string {
   });
   const hours = d.getHours().toString().padStart(2, '0');
   const minutes = d.getMinutes().toString().padStart(2, '0');
-  return `Uploaded by ${uploaderName} on ${date} at ${hours}:${minutes}`;
+  return `${date} at ${hours}:${minutes}`;
 }
 
 function ProgressBar({
   complete,
   total,
   percent,
+  validatedComplete,
+  iclStats,
+  statUnit = 'completed',
 }: {
   complete: number;
   total: number;
   percent: number;
+  validatedComplete?: number;
+  iclStats?: {
+    decidedConvert: number;
+    decidedDischarge: number;
+  };
+  statUnit?: 'converted' | 'completed' | 'icl-reassessment' | 'discharge-submitted';
 }) {
+  const validatedPercentOfComplete =
+    validatedComplete != null && complete > 0
+      ? Math.round((validatedComplete / complete) * 100)
+      : 0;
+  const convertDecisionPercent =
+    iclStats && complete > 0 ? Math.round((iclStats.decidedConvert / complete) * 100) : 0;
+  const dischargeDecisionPercent =
+    iclStats && complete > 0 ? Math.round((iclStats.decidedDischarge / complete) * 100) : 0;
+  const validatedLabel =
+    validatedComplete != null && complete > 0
+      ? `, ${validatedComplete} of ${complete} converted Epic episodes validated (${validatedPercentOfComplete}% of converted)`
+      : '';
+  const isEpisodeConversion = statUnit === 'converted';
+  const isIclReassessment = statUnit === 'icl-reassessment';
+  const isDischargeSubmitted = statUnit === 'discharge-submitted';
+
   return (
-    <div
-      className="hc-progress-bar"
-      role="progressbar"
-      aria-valuenow={percent}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-label={`${complete} of ${total} completed, ${percent}%`}
-    >
-      <div className="hc-progress-bar-fill" style={{ width: `${percent}%` }} />
-      <span className="hc-progress-bar-label">
-        {complete} / {total} completed ({percent}%)
-      </span>
+    <div className="hc-progress-bar-group">
+      <div
+        className="hc-progress-bar"
+        role="progressbar"
+        aria-valuenow={percent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={
+          isEpisodeConversion
+            ? `${complete} of ${total} VHA enrolments converted to Epic episodes, ${percent}%${validatedLabel}`
+            : isIclReassessment && iclStats
+              ? `${complete} of ${total} reassessments completed, ${percent}%. ${iclStats.decidedConvert} of ${complete} decisions to convert (${convertDecisionPercent}%), ${iclStats.decidedDischarge} of ${complete} decisions to discharge (${dischargeDecisionPercent}%)`
+              : isDischargeSubmitted
+                ? `${complete} of ${total} discharges submitted, ${percent}%`
+                : `${complete} of ${total} completed, ${percent}%${validatedLabel}`
+        }
+      >
+        <div
+          className={`hc-progress-bar-fill${percent >= 100 ? ' hc-progress-bar-fill--full' : ''}`}
+          style={{ width: `${percent}%` }}
+        >
+          {validatedComplete != null && complete > 0 && validatedComplete > 0 ? (
+            <div
+              className={`hc-progress-bar-fill-validated${
+                validatedPercentOfComplete >= 100 && percent >= 100
+                  ? ' hc-progress-bar-fill-validated--full'
+                  : ''
+              }`}
+              style={{ width: `${validatedPercentOfComplete}%` }}
+              title={`${validatedComplete} of ${complete} converted Epic episodes validated`}
+            />
+          ) : null}
+        </div>
+      </div>
+      <div className="hc-progress-bar-stats">
+        {isEpisodeConversion ? (
+          <>
+            <p className="hc-progress-bar-stat hc-progress-bar-stat--converted">
+              {complete} / {total} VHA enrolments converted to Epic episodes ({percent}%)
+            </p>
+            {validatedComplete != null ? (
+              <p className="hc-progress-bar-stat hc-progress-bar-stat--validated">
+                {validatedComplete} / {complete} converted Epic episodes validated (
+                {validatedPercentOfComplete}%)
+              </p>
+            ) : null}
+          </>
+        ) : isIclReassessment && iclStats ? (
+          <>
+            <p className="hc-progress-bar-stat">
+              {complete} / {total} Reassessments Completed
+            </p>
+            <p className="hc-progress-bar-stat">
+              {iclStats.decidedConvert} / {complete} Decisions to Convert ({convertDecisionPercent}%)
+            </p>
+            <p className="hc-progress-bar-stat">
+              {iclStats.decidedDischarge} / {complete} Decisions to Discharge ({dischargeDecisionPercent}
+              %)
+            </p>
+          </>
+        ) : isDischargeSubmitted ? (
+          <p className="hc-progress-bar-stat">
+            {complete} / {total} Discharges Submitted ({percent}%)
+          </p>
+        ) : (
+          <p className="hc-progress-bar-stat">
+            {complete} / {total} completed ({percent}%)
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -73,67 +144,103 @@ function BucketCard({
   total,
   complete,
   percentComplete,
+  validatedComplete,
+  iclStats,
+  statUnit = 'completed',
+  onClick,
 }: {
   title: string;
   total: number;
   complete: number;
   percentComplete: number;
+  validatedComplete?: number;
+  iclStats?: {
+    decidedConvert: number;
+    decidedDischarge: number;
+  };
+  statUnit?: 'converted' | 'completed' | 'icl-reassessment' | 'discharge-submitted';
+  onClick?: () => void;
 }) {
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (!onClick) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onClick();
+    }
+  };
+
   return (
-    <article className="hc-progress-card hc-panel">
+    <article
+      className={`hc-progress-card hc-panel${onClick ? ' hc-progress-card--clickable' : ''}`}
+      {...(onClick
+        ? {
+            role: 'button',
+            tabIndex: 0,
+            onClick,
+            onKeyDown: handleKeyDown,
+            'aria-label': `View ${title}`,
+          }
+        : {})}
+    >
       <h3 className="hc-progress-card-title">{title}</h3>
-      <ProgressBar complete={complete} total={total} percent={percentComplete} />
+      <ProgressBar
+        complete={complete}
+        total={total}
+        percent={percentComplete}
+        validatedComplete={validatedComplete}
+        iclStats={iclStats}
+        statUnit={statUnit}
+      />
     </article>
   );
-}
-
-function outcomeClass(outcome: ReconciliationOutcome): string {
-  if (outcome === 'perfect') return 'hc-reconcile-outcome--perfect';
-  if (outcome === 'incorrect') return 'hc-reconcile-outcome--incorrect';
-  return 'hc-reconcile-outcome--unmatched';
 }
 
 interface ProgressTrackerProps {
   metrics: ProgressMetrics;
   dailyProgressSeries: DailyProgressSnapshot[];
-  importActivity: ImportActivityRow[];
+  unifiedImportActivity: UnifiedImportActivityRow[];
   uploaderByUserId: Map<string, BatchUploader>;
-  reportImports: EpicConversionReportImport[];
   reportUploaderByUserId: Map<string, BatchUploader>;
-  latestSummary: ReconciliationSummary | null;
-  reconciliationDetails: ReconciliationDetailRow[];
-  detailsImportId: string | null;
-  onLoadReconciliationDetails: (importId: string) => void;
+  onNavigateToStrategy?: (strategy: string) => void;
+}
+
+function resolveUploaderName(
+  importedBy: string | null,
+  ssdbUploaders: Map<string, BatchUploader>,
+  epicUploaders: Map<string, BatchUploader>
+): string {
+  if (!importedBy) return 'Unknown';
+  const profile = ssdbUploaders.get(importedBy) ?? epicUploaders.get(importedBy);
+  return uploaderLabel(profile);
 }
 
 export function ProgressTracker({
   metrics,
   dailyProgressSeries,
-  importActivity,
+  unifiedImportActivity,
   uploaderByUserId,
-  reportImports,
   reportUploaderByUserId,
-  latestSummary,
-  reconciliationDetails,
-  detailsImportId,
-  onLoadReconciliationDetails,
+  onNavigateToStrategy,
 }: ProgressTrackerProps) {
+  const hasGoLive = metrics.daysUntilGoLive != null;
+  const daysUntilGoLive = metrics.daysUntilGoLive;
+
   return (
     <section className="hc-progress-tracker">
       <div
-        className={`hc-progress-buckets${
-          metrics.daysUntilGoLive != null ? ' hc-progress-buckets--with-go-live' : ''
+        className={`hc-progress-tracker-grid${
+          hasGoLive ? ' hc-progress-tracker-grid--with-go-live' : ''
         }`}
       >
-        {metrics.daysUntilGoLive != null && (
+        {hasGoLive && (
           <article className="hc-progress-card hc-panel hc-progress-go-live-card">
             <div className="hc-progress-go-live-body">
               <span className="hc-progress-go-live-value">
-                {metrics.daysUntilGoLive > 0
-                  ? `${metrics.daysUntilGoLive} days`
-                  : metrics.daysUntilGoLive === 0
+                {daysUntilGoLive! > 0
+                  ? `${daysUntilGoLive} days`
+                  : daysUntilGoLive === 0
                     ? 'Today'
-                    : `${Math.abs(metrics.daysUntilGoLive)} days ago`}
+                    : `${Math.abs(daysUntilGoLive!)} days ago`}
               </span>
               <span className="hc-muted">until go-live</span>
             </div>
@@ -144,160 +251,112 @@ export function ProgressTracker({
           total={metrics.episodeConversion.total}
           complete={metrics.episodeConversion.complete}
           percentComplete={metrics.episodeConversion.percentComplete}
+          validatedComplete={metrics.episodeConversion.validatedComplete}
+          statUnit="converted"
+          onClick={
+            onNavigateToStrategy
+              ? () => onNavigateToStrategy(EPISODE_CONVERSION_STRATEGY)
+              : undefined
+          }
         />
         <BucketCard
           title="ICL Reassessment Required"
           total={metrics.iclReassessment.total}
           complete={metrics.iclReassessment.complete}
           percentComplete={metrics.iclReassessment.percentComplete}
+          statUnit="icl-reassessment"
+          iclStats={{
+            decidedConvert: metrics.iclReassessment.decidedConvert,
+            decidedDischarge: metrics.iclReassessment.decidedDischarge,
+          }}
+          onClick={
+            onNavigateToStrategy
+              ? () => onNavigateToStrategy(ICL_REASSESSMENT_STRATEGY)
+              : undefined
+          }
         />
         <BucketCard
           title="Discharge from Program"
           total={metrics.programDischarge.total}
           complete={metrics.programDischarge.complete}
           percentComplete={metrics.programDischarge.percentComplete}
+          statUnit="discharge-submitted"
+          onClick={
+            onNavigateToStrategy ? () => onNavigateToStrategy(DISCHARGE_STRATEGY) : undefined
+          }
         />
-      </div>
 
-      <div className="hc-progress-section hc-panel">
-        <DailyProgressChart series={dailyProgressSeries} />
-      </div>
-
-      <div className="hc-progress-section hc-panel">
-        <h2 className="hc-progress-section-title">Import Activity</h2>
-        <div className="hc-table-wrap">
-          <table className="hc-table hc-table--grid">
-            <thead>
-              <tr>
-                <th>SSDB Upload</th>
-                <th>Rows</th>
-                <th>Strategy breakdown</th>
-              </tr>
-            </thead>
-            <tbody>
-              {importActivity.length === 0 ? (
-                <tr>
-                  <td colSpan={3} className="hc-muted">
-                    No enrolment data uploaded yet.
-                  </td>
-                </tr>
-              ) : (
-                importActivity.map((row) => {
-                  const uploader = row.importedBy
-                    ? uploaderByUserId.get(row.importedBy)
-                    : null;
-                  const uploaderName = row.importedBy ? uploaderLabel(uploader) : 'Unknown';
-                  return (
-                    <tr key={`${row.filename}-${row.importedAt}`}>
-                      <td>
-                        <div className="hc-import-upload-cell">
-                          <span className="hc-import-filename">{row.filename}</span>
-                          <span className="hc-import-upload-meta">
-                            {formatImportMeta(uploaderName, row.importedAt)}
-                          </span>
-                        </div>
-                      </td>
-                      <td>{row.rowCount}</td>
-                      <td>{formatStrategyBreakdown(row.strategyBreakdown)}</td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {latestSummary && (
-        <div className="hc-progress-section hc-panel">
-          <h2 className="hc-progress-section-title">Epic Conversion Reconciliation</h2>
-          <p className="hc-muted hc-progress-reconcile-meta">
-            Latest report: {latestSummary.filename} ({formatDate(latestSummary.importedAt.slice(0, 10))})
-          </p>
-          <div className="hc-progress-reconcile-summary">
-            <div className="hc-reconcile-stat hc-reconcile-stat--perfect">
-              <strong>{latestSummary.perfect}</strong>
-              <span>{RECONCILIATION_OUTCOME_LABELS.perfect}</span>
-            </div>
-            <div className="hc-reconcile-stat hc-reconcile-stat--incorrect">
-              <strong>{latestSummary.incorrect}</strong>
-              <span>{RECONCILIATION_OUTCOME_LABELS.incorrect}</span>
-            </div>
-            <div className="hc-reconcile-stat hc-reconcile-stat--unmatched">
-              <strong>{latestSummary.unmatched}</strong>
-              <span>{RECONCILIATION_OUTCOME_LABELS.unmatched}</span>
-            </div>
+        <section className="hc-epic-split-panel hc-progress-section hc-progress-section--overall hc-progress-tracker-overall">
+          <h3 className="hc-epic-split-panel-title">
+            <span className="hc-epic-split-panel-title-main">Overall Progress</span>
+          </h3>
+          <div className="hc-progress-section-body">
+            <DailyProgressChart series={dailyProgressSeries} />
           </div>
+        </section>
 
-          {reportImports.length > 0 && (
-            <div className="hc-progress-reconcile-actions">
-              <label className="hc-progress-reconcile-select-label">
-                View details for report
-                <select
-                  className="hc-select"
-                  value={detailsImportId ?? latestSummary.importId}
-                  onChange={(e) => onLoadReconciliationDetails(e.target.value)}
-                >
-                  {reportImports.map((imp) => {
-                    const uploader = imp.imported_by
-                      ? reportUploaderByUserId.get(imp.imported_by)
-                      : null;
-                    const name = imp.imported_by ? uploaderLabel(uploader) : 'Unknown';
-                    return (
-                      <option key={imp.id} value={imp.id}>
-                        {imp.source_filename} — {name}
-                      </option>
-                    );
-                  })}
-                </select>
-              </label>
-            </div>
-          )}
-
-          {reconciliationDetails.length > 0 && (
-            <div className="hc-table-wrap hc-progress-reconcile-table-wrap">
-              <table className="hc-table hc-table--grid">
-                <thead>
+        <section className="hc-epic-split-panel hc-progress-section hc-progress-section--import-activity hc-progress-tracker-import">
+          <h3 className="hc-epic-split-panel-title">
+            <span className="hc-epic-split-panel-title-main">Import Activity</span>
+          </h3>
+          <div className="hc-table-wrap">
+            <table className="hc-table hc-table--grid hc-table--import-activity">
+              <thead>
+                <tr>
+                  <th className="hc-col-upload-details">Upload Details</th>
+                  <th className="hc-col-import-rows">Rows</th>
+                  <th className="hc-col-upload-results">Results</th>
+                </tr>
+              </thead>
+              <tbody>
+                {unifiedImportActivity.length === 0 ? (
                   <tr>
-                    <th>Row</th>
-                    <th>MRN</th>
-                    <th>Outcome</th>
-                    <th>Discrepancies</th>
-                    <th>Report Pathway</th>
-                    <th>Matched Pathway</th>
+                    <td colSpan={3} className="hc-muted">
+                      No SSDB or Epic uploads yet.
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {reconciliationDetails.map((row) => (
-                    <tr key={row.reportRowId}>
-                      <td>{row.rowIndex}</td>
-                      <td>{row.mrn}</td>
-                      <td>
-                        <span className={`hc-reconcile-outcome ${outcomeClass(row.outcome)}`}>
-                          {RECONCILIATION_OUTCOME_LABELS[row.outcome]}
-                        </span>
-                      </td>
-                      <td>
-                        {row.fieldDiscrepancies.length
-                          ? row.fieldDiscrepancies
-                              .map(
-                                (field) =>
-                                  RECONCILIATION_FIELD_LABELS[field as ReconciliationCompareField] ??
-                                  field
-                              )
-                              .join(', ')
-                          : '—'}
-                      </td>
-                      <td>{row.pathway ?? '—'}</td>
-                      <td>{row.matchedPathway ?? '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
+                ) : (
+                  unifiedImportActivity.map((row) => {
+                    const uploaderName = resolveUploaderName(
+                      row.importedBy,
+                      uploaderByUserId,
+                      reportUploaderByUserId
+                    );
+                    return (
+                      <tr key={`${row.type}-${row.filename}-${row.importedAt}`}>
+                        <td className="hc-col-upload-details">
+                          <div className="hc-import-upload-cell">
+                            <div className="hc-import-upload-title">
+                              <span className="hc-import-filename">{row.filename}</span>
+                              <span
+                                className={`hc-badge hc-upload-type-badge hc-upload-type-badge--${row.type}`}
+                              >
+                                {uploadTypeLabel(row.type)}
+                              </span>
+                            </div>
+                            <span className="hc-import-upload-meta">
+                              <span className="hc-import-upload-meta-line">
+                                Uploaded by {uploaderName}
+                              </span>
+                              <span className="hc-import-upload-meta-line">
+                                {formatImportTimestamp(row.importedAt)}
+                              </span>
+                            </span>
+                          </div>
+                        </td>
+                        <td className="hc-col-import-rows">{row.rowCount}</td>
+                        <td className="hc-col-upload-results">
+                          {formatUnifiedImportResults(row)}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
     </section>
   );
 }

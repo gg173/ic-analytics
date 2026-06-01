@@ -5,7 +5,7 @@ import {
   type DailyProgressSegment,
   type DailyProgressSnapshot,
   formatChartAxisDay,
-  formatChartDayLabel,
+  formatChartDayLabelParts,
   maxDailyTotal,
   yAxisTicks,
 } from '../progress/computeDailyProgressSeries';
@@ -39,7 +39,6 @@ export function DailyProgressChart({ series }: DailyProgressChartProps) {
   return (
     <div className="hc-daily-chart" role="img" aria-label="Daily record progress from May 30 to June 22">
       <div className="hc-daily-chart-header">
-        <h2 className="hc-progress-card-title hc-daily-chart-title">Overall Progress</h2>
         <div className="hc-daily-chart-legend">
           {DAILY_PROGRESS_SEGMENT_ORDER.map((segment) => (
             <span key={segment} className="hc-daily-chart-legend-item">
@@ -86,6 +85,8 @@ export function DailyProgressChart({ series }: DailyProgressChartProps) {
               {series.map((day, index) => {
                 const barHeightPct = yMax > 0 ? (day.total / yMax) * 100 : 0;
                 const isToday = day.date === today;
+                const isFuture = day.date > today;
+                const { month: labelMonth, day: labelDay } = formatChartDayLabelParts(day.date);
                 const tooltipParts = DAILY_PROGRESS_SEGMENT_ORDER.filter(
                   (segment) => day[segment] > 0
                 ).map((segment) => `${DAILY_PROGRESS_SEGMENT_LABELS[segment]}: ${day[segment]}`);
@@ -93,7 +94,9 @@ export function DailyProgressChart({ series }: DailyProgressChartProps) {
                 return (
                   <div
                     key={day.date}
-                    className={`hc-daily-chart-day${isToday ? ' hc-daily-chart-day--today' : ''}`}
+                    className={`hc-daily-chart-day${isToday ? ' hc-daily-chart-day--today' : ''}${
+                      isFuture ? ' hc-daily-chart-day--future' : ''
+                    }`}
                     style={{ gridColumn: index + 1 }}
                   >
                     <div
@@ -127,7 +130,13 @@ export function DailyProgressChart({ series }: DailyProgressChartProps) {
                         </div>
                       </div>
                     </div>
-                    <div className="hc-daily-chart-x-label">{formatChartDayLabel(day.date)}</div>
+                    <div
+                      className="hc-daily-chart-x-label"
+                      aria-label={formatChartAxisDay(day.date)}
+                    >
+                      <span className="hc-daily-chart-x-label-month">{labelMonth}</span>
+                      <span className="hc-daily-chart-x-label-day">{labelDay}</span>
+                    </div>
                   </div>
                 );
               })}

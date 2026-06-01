@@ -13,6 +13,8 @@ export interface EpicConversionParseResult {
   rows: ReturnType<typeof mapEpicConversionRows>['rows'];
   skipped: number;
   duplicateEnrollIds: number;
+  /** True when the workbook is a VHA SSDB export (ENROLL ID + ENROLL STATUS). */
+  isVhaSsdb: boolean;
   errors: string[];
 }
 
@@ -61,10 +63,11 @@ function parseRawSheet(buf: ArrayBuffer): {
   return { headers, rows, errors };
 }
 
-const emptyResult = (errors: string[]): EpicConversionParseResult => ({
+const emptyResult = (errors: string[], isVhaSsdb = false): EpicConversionParseResult => ({
   rows: [],
   skipped: 0,
   duplicateEnrollIds: 0,
+  isVhaSsdb,
   errors,
 });
 
@@ -84,14 +87,14 @@ export function parseEpicConversionXlsxBuffer(
     const headerErrors = validateVhaSsdbHeaders(parsed.headers);
     errors.push(...headerErrors);
     if (headerErrors.length) {
-      return emptyResult(errors);
+      return emptyResult(errors, true);
     }
 
     const { rows, skipped } = mapVhaSsdbRows(parsed.rows, filename, referenceDate);
     if (!rows.length) {
       errors.push('No valid rows (each ACTIVE row needs an ENROLL ID and MRN)');
     }
-    return { rows, skipped, duplicateEnrollIds: 0, errors };
+    return { rows, skipped, duplicateEnrollIds: 0, isVhaSsdb: true, errors };
   }
 
   const headerErrors = validateEpicConversionHeaders(parsed.headers);
@@ -105,5 +108,5 @@ export function parseEpicConversionXlsxBuffer(
     errors.push('No valid rows (each row needs an MRN)');
   }
 
-  return { rows, skipped, duplicateEnrollIds: 0, errors };
+  return { rows, skipped, duplicateEnrollIds: 0, isVhaSsdb: false, errors };
 }

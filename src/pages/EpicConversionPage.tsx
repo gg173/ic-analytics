@@ -2,9 +2,17 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { parseEpicConversionXlsxBuffer } from '../epicConversion/ingest/parseEpicConversionXlsx';
 import { useEpicConversionRecords } from '../epicConversion/hooks/useEpicConversionRecords';
 import { useEpicConversionReports } from '../epicConversion/hooks/useEpicConversionReports';
+import { ConversionDiscrepanciesPanel } from '../epicConversion/components/ConversionDiscrepanciesPanel';
 import { ProgressTracker } from '../epicConversion/components/ProgressTracker';
+import {
+  buildEpicValidationStatusByRecordId,
+  isValidatedOutcome,
+  matchesReconciliationOutcomeFilter,
+} from '../epicConversion/reconciliation/reconcileReportRows';
+import type { ReconciliationOutcomeFilter } from '../epicConversion/reconciliation/types';
 import { computeImportActivity } from '../epicConversion/progress/computeImportActivity';
 import { formatStrategyBreakdown } from '../epicConversion/progress/computeImportActivity';
+import { buildUnifiedImportActivity } from '../epicConversion/progress/computeUnifiedImportActivity';
 import { computeDailyProgressSeries } from '../epicConversion/progress/computeDailyProgressSeries';
 import { computeProgressMetrics } from '../epicConversion/progress/computeProgressMetrics';
 import {
@@ -27,6 +35,7 @@ import type {
 import { DISCHARGE_REASONS } from '../epicConversion/types';
 import { ToolbarMultiSelect, matchesMultiFilter } from '../epicConversion/components/ToolbarMultiSelect';
 import { downloadEnrolmentImportXlsx } from '../epicConversion/export/buildEnrolmentXlsx';
+import { downloadEpicReportImportXlsx } from '../epicConversion/export/buildEpicReportXlsx';
 import { useAuth } from '../homecare/hooks/useAuth';
 import { uploaderLabel } from '../homecare/hooks/useBatch';
 import type { BatchUploader } from '../homecare/types';
@@ -136,6 +145,20 @@ function formatSrvDetail(r: EpicConversionRecord): string {
   return text || '—';
 }
 
+function strategyTabCountClassName(strategy: string): string {
+  const base = 'hc-strategy-tab-count';
+  switch (strategy) {
+    case EPISODE_CONVERSION_STRATEGY:
+      return `${base} ${base}--episode`;
+    case ICL_REASSESSMENT_STRATEGY:
+      return `${base} ${base}--icl`;
+    case DISCHARGE_STRATEGY:
+      return `${base} ${base}--discharge`;
+    default:
+      return base;
+  }
+}
+
 function formatImportUploadMeta(uploaderName: string, importedAt: string): string {
   const d = new Date(importedAt);
   if (Number.isNaN(d.getTime())) {
@@ -171,6 +194,57 @@ function formatDecisionStampAt(iso: string): string {
 function emailToUsername(email: string | null | undefined): string {
   if (!email) return 'unknown';
   return email.split('@')[0];
+}
+
+function formatEpicValidationStatus(
+  recordId: string,
+  validationByRecordId: ReturnType<typeof buildEpicValidationStatusByRecordId>
+): { text: string; className: string } {
+  const validation = validationByRecordId.get(recordId);
+  if (!validation || validation.status === 'pending') {
+    return {
+      text: 'Pending validation',
+      className: 'hc-epic-compact-validation--pending',
+    };
+  }
+  if (validation.status === 'discrepancy') {
+    return {
+      text: `Discrepancy Detected: ${validation.detail}`,
+      className: 'hc-epic-compact-validation--discrepancy',
+    };
+  }
+  return {
+    text: `Validated by ${validation.filename}`,
+    className: 'hc-epic-compact-validation--validated',
+  };
+}
+
+function countEpicValidationStatuses(
+  records: EpicConversionRecord[],
+  validationByRecordId: ReturnType<typeof buildEpicValidationStatusByRecordId>
+): { pending: number; discrepancy: number; validated: number } {
+  let pending = 0;
+  let discrepancy = 0;
+  let validated = 0;
+  for (const record of records) {
+    const status = validationByRecordId.get(record.id);
+    if (status?.status === 'validated') validated += 1;
+    else if (status?.status === 'discrepancy') discrepancy += 1;
+    else pending += 1;
+  }
+  return { pending, discrepancy, validated };
+}
+
+type CompletionValidationFilter = 'all' | 'pending' | 'discrepancy' | 'validated';
+
+function getRecordValidationKind(
+  recordId: string,
+  validationByRecordId: ReturnType<typeof buildEpicValidationStatusByRecordId>
+): Exclude<CompletionValidationFilter, 'all'> {
+  const status = validationByRecordId.get(recordId);
+  if (status?.status === 'validated') return 'validated';
+  if (status?.status === 'discrepancy') return 'discrepancy';
+  return 'pending';
 }
 
 function isOver90LosCategory(value: string): boolean {
@@ -237,7 +311,8 @@ function distinctOptions(
 }
 
 const PROGRESS_TRACKER_TAB = 'Progress Tracker';
-const UPLOAD_DATA_TAB = 'Upload Data';
+const CONVERSION_VALIDATION_TAB = 'Conversion Validation';
+const UPLOAD_DATA_TAB = 'Import Data';
 
 function formatPathwayWithCarePath(r: EpicConversionRecord): string {
   if (r.pathway && r.care_path) return `${r.pathway} (${r.care_path})`;
@@ -347,23 +422,27 @@ export function EpicConversionPage() {
     deleteImport,
   } = useEpicConversionRecords();
   const { user, profile } = useAuth();
-  const convertedRecords = useMemo(
-    () => records.filter((r) => r.completed_at != null),
-    [records]
-  );
   const {
     reportImports,
     reportError,
     latestSummary,
-    reconciliationDetails,
-    detailsImportId,
+    unifiedSummary,
+    importSummariesById,
+    unifiedReconciliationDetails,
+    unifiedDiscrepancyDetails,
     uploadReport,
     loadReconciliationDetails,
+    loadUnifiedReconciliationDetails,
+    recheckUnifiedReconciliation,
+    recheckingUnified,
+    fetchReportRowsForImport,
     deleteReport,
-  } = useEpicConversionReports(convertedRecords);
-  const progressMetrics = useMemo(() => computeProgressMetrics(records), [records]);
-  const dailyProgressSeries = useMemo(() => computeDailyProgressSeries(records), [records]);
+  } = useEpicConversionReports(records);
   const importActivity = useMemo(() => computeImportActivity(records), [records]);
+  const unifiedImportActivity = useMemo(
+    () => buildUnifiedImportActivity(importActivity, reportImports, importSummariesById),
+    [importActivity, reportImports, importSummariesById]
+  );
   const enrolmentFileRef = useRef<HTMLInputElement>(null);
   const epicReportsFileRef = useRef<HTMLInputElement>(null);
   const [uploadingEnrolment, setUploadingEnrolment] = useState(false);
@@ -390,6 +469,10 @@ export function EpicConversionPage() {
     flow: 'discharge' | 'episode';
   } | null>(null);
   const [stackExpandMode, setStackExpandMode] = useState<'none' | 'main' | 'split'>('none');
+  const [reconciliationOutcomeFilter, setReconciliationOutcomeFilter] =
+    useState<ReconciliationOutcomeFilter>('all');
+  const [completionValidationFilter, setCompletionValidationFilter] =
+    useState<CompletionValidationFilter>('all');
   const [epicTableSort, setEpicTableSort] = useState<{
     key: EpicTableSortKey;
     direction: SortDirection;
@@ -588,12 +671,71 @@ export function EpicConversionPage() {
   const [activeTab, setActiveTab] = useState<string | null>(PROGRESS_TRACKER_TAB);
   const isUploadTab = activeTab === UPLOAD_DATA_TAB;
   const isProgressTrackerTab = activeTab === PROGRESS_TRACKER_TAB;
-  const isSpecialTab = isUploadTab || isProgressTrackerTab;
+  const isDiscrepanciesTab = activeTab === CONVERSION_VALIDATION_TAB;
+  const isSpecialTab = isUploadTab || isProgressTrackerTab || isDiscrepanciesTab;
+
+  const isEpisodeConversionTab = activeTab === EPISODE_CONVERSION_STRATEGY;
 
   useEffect(() => {
-    if (!isProgressTrackerTab || !latestSummary) return;
+    if ((!isProgressTrackerTab && !isDiscrepanciesTab) || !latestSummary) return;
     void loadReconciliationDetails(latestSummary.importId);
-  }, [isProgressTrackerTab, latestSummary, loadReconciliationDetails]);
+  }, [isProgressTrackerTab, isDiscrepanciesTab, latestSummary, loadReconciliationDetails]);
+
+  useEffect(() => {
+    if (
+      (!isDiscrepanciesTab && !isEpisodeConversionTab && !isProgressTrackerTab) ||
+      !reportImports.length
+    ) {
+      return;
+    }
+    void loadUnifiedReconciliationDetails();
+  }, [
+    isDiscrepanciesTab,
+    isEpisodeConversionTab,
+    isProgressTrackerTab,
+    reportImports.length,
+    records,
+    loadUnifiedReconciliationDetails,
+  ]);
+
+  const validatedRecordIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const row of unifiedReconciliationDetails) {
+      if (row.matchedRecordId && isValidatedOutcome(row.outcome)) {
+        ids.add(row.matchedRecordId);
+      }
+    }
+    return ids;
+  }, [unifiedReconciliationDetails]);
+
+  const epicValidationByRecordId = useMemo(
+    () =>
+      buildEpicValidationStatusByRecordId(
+        unifiedReconciliationDetails,
+        reportImports.length > 0
+      ),
+    [unifiedReconciliationDetails, reportImports.length]
+  );
+
+  const progressMetrics = useMemo(
+    () =>
+      computeProgressMetrics(
+        records,
+        new Date(),
+        reportImports.length > 0 ? validatedRecordIds : undefined
+      ),
+    [records, validatedRecordIds, reportImports.length]
+  );
+  const dailyProgressSeries = useMemo(() => computeDailyProgressSeries(records), [records]);
+
+  const discrepancyCount = unifiedDiscrepancyDetails.length;
+  const filteredReconciliationDetails = useMemo(
+    () =>
+      unifiedReconciliationDetails.filter((row) =>
+        matchesReconciliationOutcomeFilter(row.outcome, reconciliationOutcomeFilter)
+      ),
+    [unifiedReconciliationDetails, reconciliationOutcomeFilter]
+  );
 
   useEffect(() => {
     if (loading) return;
@@ -601,18 +743,27 @@ export function EpicConversionPage() {
       if (activeTab !== UPLOAD_DATA_TAB) setActiveTab(UPLOAD_DATA_TAB);
       return;
     }
-    if (activeTab === UPLOAD_DATA_TAB || activeTab === PROGRESS_TRACKER_TAB) return;
+    if (
+      activeTab === UPLOAD_DATA_TAB ||
+      activeTab === PROGRESS_TRACKER_TAB ||
+      activeTab === CONVERSION_VALIDATION_TAB
+    ) {
+      return;
+    }
     if (!activeTab || !strategyTabs.includes(activeTab)) {
       setActiveTab(PROGRESS_TRACKER_TAB);
     }
   }, [strategyTabs, activeTab, loading]);
 
   const isIclTab = activeTab === ICL_REASSESSMENT_STRATEGY;
-  const isEpisodeConversionTab = activeTab === EPISODE_CONVERSION_STRATEGY;
   const isDischargeTab = activeTab === DISCHARGE_STRATEGY;
 
   useEffect(() => {
     setStackExpandMode('none');
+  }, [activeTab]);
+
+  useEffect(() => {
+    setCompletionValidationFilter('all');
   }, [activeTab]);
 
   const toggleEpicTableSort = (key: EpicTableSortKey) => {
@@ -713,6 +864,28 @@ export function EpicConversionPage() {
     return activeRecords.filter((r) => r.completed_at != null);
   }, [activeRecords, isEpisodeConversionTab]);
 
+  const episodeConversionValidationCounts = useMemo(
+    () =>
+      countEpicValidationStatuses(
+        episodeConversionCompletedRecords,
+        epicValidationByRecordId
+      ),
+    [episodeConversionCompletedRecords, epicValidationByRecordId]
+  );
+
+  const filteredEpisodeConversionCompletedRecords = useMemo(() => {
+    if (completionValidationFilter === 'all') return episodeConversionCompletedRecords;
+    return episodeConversionCompletedRecords.filter(
+      (record) =>
+        getRecordValidationKind(record.id, epicValidationByRecordId) ===
+        completionValidationFilter
+    );
+  }, [
+    episodeConversionCompletedRecords,
+    completionValidationFilter,
+    epicValidationByRecordId,
+  ]);
+
   const dischargePendingRecords = useMemo(() => {
     if (!isDischargeTab) return [];
     return activeRecords.filter((r) => r.status !== 'discharged');
@@ -786,31 +959,45 @@ export function EpicConversionPage() {
         return;
       }
 
-      const result = await insertRows(parsed.rows, user?.id ?? null);
+      const insertOptions = parsed.isVhaSsdb
+        ? {
+            ssdbUploadEnrollIds: new Set(
+              parsed.rows
+                .map((row) => row.enroll_id)
+                .filter((id): id is string => !!id)
+            ),
+            dischargedBy: emailToUsername(user?.email ?? profile?.email),
+          }
+        : undefined;
+
+      const result = await insertRows(parsed.rows, user?.id ?? null, insertOptions);
       if (result.error) {
         setUploadError(result.error);
       } else {
         const breakdown = formatStrategyBreakdown(result.strategyBreakdown);
+        const parts: string[] = [];
         if (result.inserted > 0) {
-          setUploadSuccessMessage(
-            `Inserted ${result.inserted} net-new record${result.inserted === 1 ? '' : 's'} (${breakdown}).` +
-              (result.skippedDuplicates > 0
-                ? ` Skipped ${result.skippedDuplicates} duplicate${result.skippedDuplicates === 1 ? '' : 's'}.`
-                : '')
+          parts.push(
+            `Inserted ${result.inserted} net-new record${result.inserted === 1 ? '' : 's'} (${breakdown}).`
           );
         } else if (result.skippedDuplicates > 0) {
-          setUploadSuccessMessage(
+          parts.push(
             `No net-new records added. Skipped ${result.skippedDuplicates} duplicate${result.skippedDuplicates === 1 ? '' : 's'}.`
           );
         } else {
-          setUploadSuccessMessage('Upload completed with no rows to insert.');
+          parts.push('Upload completed with no rows to insert.');
         }
-        if (parsed.skipped > 0) {
-          setUploadSuccessMessage(
-            (prev) =>
-              `${prev ?? ''} ${parsed.skipped} row${parsed.skipped === 1 ? '' : 's'} skipped during parse.`.trim()
+        if (result.autoDischarged > 0) {
+          parts.push(
+            `Marked ${result.autoDischarged} enrollee${result.autoDischarged === 1 ? '' : 's'} absent from this SSDB as discharged from program.`
           );
         }
+        if (parsed.skipped > 0) {
+          parts.push(
+            `${parsed.skipped} row${parsed.skipped === 1 ? '' : 's'} skipped during parse.`
+          );
+        }
+        setUploadSuccessMessage(parts.join(' '));
       }
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Upload failed');
@@ -828,7 +1015,8 @@ export function EpicConversionPage() {
     } else if (result.summary) {
       setEpicReportSuccessMessage(
         `Uploaded ${result.rowCount} row${result.rowCount === 1 ? '' : 's'}. ` +
-          `${result.summary.perfect} perfect, ${result.summary.incorrect} incorrect, ${result.summary.unmatched} unmatched.`
+          `${result.summary.validated} validated, ${result.summary.statusDiscrepancy} status discrepancies, ` +
+          `${result.summary.fieldDiscrepancy} field discrepancies, ${result.summary.unmatched} unmatched.`
       );
     }
     setUploadingEpicReport(false);
@@ -1019,6 +1207,15 @@ export function EpicConversionPage() {
     downloadEnrolmentImportXlsx(rows, filename);
   };
 
+  const handleDownloadReportImport = async (importId: string, filename: string) => {
+    const { rows, error: fetchError } = await fetchReportRowsForImport(importId);
+    if (fetchError) {
+      setEpicReportError(fetchError);
+      return;
+    }
+    downloadEpicReportImportXlsx(rows ?? [], filename);
+  };
+
   return (
     <>
     <div className="hc-page hc-page--split">
@@ -1056,6 +1253,18 @@ export function EpicConversionPage() {
           >
             {PROGRESS_TRACKER_TAB}
           </button>
+          <button
+            type="button"
+            className={`hc-strategy-tab${
+              isDiscrepanciesTab ? ' hc-strategy-tab--active' : ''
+            }`}
+            onClick={() => setActiveTab(CONVERSION_VALIDATION_TAB)}
+          >
+            {CONVERSION_VALIDATION_TAB}
+            {discrepancyCount > 0 && (
+              <span className="hc-strategy-tab-count">{discrepancyCount}</span>
+            )}
+          </button>
           {strategyTabs.map((strategy) => (
             <button
               key={strategy}
@@ -1066,7 +1275,7 @@ export function EpicConversionPage() {
               onClick={() => setActiveTab(strategy)}
             >
               {strategyTabLabel(strategy)}
-              <span className="hc-strategy-tab-count">
+              <span className={strategyTabCountClassName(strategy)}>
                 {countsByStrategy.get(strategy) ?? 0}
               </span>
             </button>
@@ -1325,6 +1534,15 @@ export function EpicConversionPage() {
                             <div className="hc-table-actions">
                               <button
                                 type="button"
+                                className="hc-btn hc-btn-secondary hc-btn-sm"
+                                onClick={() =>
+                                  void handleDownloadReportImport(imp.id, imp.source_filename)
+                                }
+                              >
+                                Download
+                              </button>
+                              <button
+                                type="button"
                                 className="hc-btn hc-btn-danger hc-btn-sm"
                                 onClick={() =>
                                   void handleDeleteReportImport(imp.id, imp.source_filename)
@@ -1345,18 +1563,27 @@ export function EpicConversionPage() {
         </section>
       </div>
     )}
+    {!loading && isDiscrepanciesTab && (
+      <div className="hc-epic-table-stack hc-epic-table-stack--main-expanded">
+        <ConversionDiscrepanciesPanel
+          hasEpicReports={reportImports.length > 0}
+          summary={unifiedSummary}
+          reconciliationDetails={filteredReconciliationDetails}
+          outcomeFilter={reconciliationOutcomeFilter}
+          onOutcomeFilterChange={setReconciliationOutcomeFilter}
+          onRecheck={recheckUnifiedReconciliation}
+          rechecking={recheckingUnified}
+        />
+      </div>
+    )}
     {!loading && isProgressTrackerTab && (
       <ProgressTracker
         metrics={progressMetrics}
         dailyProgressSeries={dailyProgressSeries}
-        importActivity={importActivity}
+        unifiedImportActivity={unifiedImportActivity}
         uploaderByUserId={uploaderByUserId}
-        reportImports={reportImports}
         reportUploaderByUserId={reportUploaderByUserId}
-        latestSummary={latestSummary}
-        reconciliationDetails={reconciliationDetails}
-        detailsImportId={detailsImportId}
-        onLoadReconciliationDetails={(importId) => void loadReconciliationDetails(importId)}
+        onNavigateToStrategy={setActiveTab}
       />
     )}
     {!loading && !isSpecialTab && records.length > 0 && (
@@ -1422,13 +1649,18 @@ export function EpicConversionPage() {
               )}
               {renderSplitPanel(
                 'Episode Conversion Complete',
-                episodeConversionCompletedRecords,
-                'No completed conversions yet.',
+                filteredEpisodeConversionCompletedRecords,
+                completionValidationFilter === 'all'
+                  ? 'No completed conversions yet.'
+                  : 'No rows match the selected validation filter.',
                 {
                   variant: 'status',
                   compact: true,
                   compactMode: 'completion',
                   expandTarget: 'split',
+                  validationCounts: episodeConversionValidationCounts,
+                  validationFilter: completionValidationFilter,
+                  onValidationFilterChange: setCompletionValidationFilter,
                 }
               )}
             </div>
@@ -1558,6 +1790,9 @@ export function EpicConversionPage() {
       showChangeStatus?: boolean;
       iclStagedDecisions?: boolean;
       expandTarget?: 'main' | 'split';
+      validationCounts?: { pending: number; discrepancy: number; validated: number };
+      validationFilter?: CompletionValidationFilter;
+      onValidationFilterChange?: (filter: CompletionValidationFilter) => void;
     } = {
       variant: 'status',
     }
@@ -1570,7 +1805,56 @@ export function EpicConversionPage() {
         <h3 className="hc-epic-split-panel-title">
           <span className="hc-epic-split-panel-title-main">
             {title}
-            <span className="hc-epic-split-panel-count">{groupRecords.length}</span>
+            {options.validationCounts ? (
+              <span className="hc-epic-split-panel-counts">
+                {(
+                  [
+                    ['pending', 'Pending validation'],
+                    ['discrepancy', 'Discrepancy detected'],
+                    ['validated', 'Validated'],
+                  ] as const
+                ).map(([kind, label]) => {
+                  const active = options.validationFilter === kind;
+                  const count = options.validationCounts![kind];
+                  const className = `hc-epic-split-panel-count hc-epic-split-panel-count--${kind}${
+                    active ? ' hc-epic-split-panel-count--active' : ''
+                  }`;
+
+                  if (options.onValidationFilterChange) {
+                    return (
+                      <button
+                        key={kind}
+                        type="button"
+                        className={className}
+                        title={label}
+                        aria-pressed={active}
+                        aria-label={`${count} ${label.toLowerCase()}`}
+                        onClick={() =>
+                          options.onValidationFilterChange!(
+                            active ? 'all' : kind
+                          )
+                        }
+                      >
+                        {count}
+                      </button>
+                    );
+                  }
+
+                  return (
+                    <span
+                      key={kind}
+                      className={className}
+                      title={label}
+                      aria-label={`${count} ${label.toLowerCase()}`}
+                    >
+                      {count}
+                    </span>
+                  );
+                })}
+              </span>
+            ) : (
+              <span className="hc-epic-split-panel-count">{groupRecords.length}</span>
+            )}
           </span>
           {options.expandTarget && (
             <button
@@ -1690,11 +1974,20 @@ export function EpicConversionPage() {
                     {isCompletion && r.completed_at ? (
                       <>
                         <div className="hc-epic-compact-decision-user">
-                          converted by {emailToUsername(r.completed_by)}
+                          {formatDecisionStampAt(r.completed_at)} by{' '}
+                          {emailToUsername(r.completed_by)}
                         </div>
-                        <div className="hc-epic-compact-decision-time">
-                          {formatDecisionStampAt(r.completed_at)}
-                        </div>
+                        {(() => {
+                          const { text, className } = formatEpicValidationStatus(
+                            r.id,
+                            epicValidationByRecordId
+                          );
+                          return (
+                            <div className={`hc-epic-compact-decision-time ${className}`}>
+                              {text}
+                            </div>
+                          );
+                        })()}
                       </>
                     ) : !isCompletion && r.icl_decision_at ? (
                       <>
@@ -1710,34 +2003,44 @@ export function EpicConversionPage() {
                 )}
                 <td className="hc-epic-compact-undo-cell">
                   <div className="hc-epic-compact-undo-inner">
-                    <button
-                      type="button"
-                      className="hc-epic-compact-undo"
-                      disabled={updatingId === r.id}
-                      aria-label={
-                        isCompletion
-                          ? 'Undo completion and mark as pending'
-                          : isDischargeSubmitted
-                            ? 'Undo discharge submission and return to pending'
-                            : 'Undo decision and return to ICL Decision Required'
-                      }
-                      title={
-                        isCompletion
-                          ? 'Mark as pending'
-                          : isDischargeSubmitted
-                            ? 'Return to pending discharge'
-                            : 'Return to ICL Decision Required'
-                      }
-                      onClick={() =>
-                        void (isCompletion
-                          ? handleToggleCompleted(r, false)
-                          : isDischargeSubmitted
-                            ? handleUndoDischarge(r)
-                            : handleIclDecisionChange(r, 'pending'))
-                      }
-                    >
-                      ×
-                    </button>
+                    {isCompletion && validatedRecordIds.has(r.id) ? (
+                      <span
+                        className="hc-epic-compact-validated"
+                        aria-label="Validated against Epic conversion report"
+                        title="Validated against Epic conversion report"
+                      >
+                        ✓
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="hc-epic-compact-undo"
+                        disabled={updatingId === r.id}
+                        aria-label={
+                          isCompletion
+                            ? 'Undo completion and mark as pending'
+                            : isDischargeSubmitted
+                              ? 'Undo discharge submission and return to pending'
+                              : 'Undo decision and return to ICL Decision Required'
+                        }
+                        title={
+                          isCompletion
+                            ? 'Mark as pending'
+                            : isDischargeSubmitted
+                              ? 'Return to pending discharge'
+                              : 'Return to ICL Decision Required'
+                        }
+                        onClick={() =>
+                          void (isCompletion
+                            ? handleToggleCompleted(r, false)
+                            : isDischargeSubmitted
+                              ? handleUndoDischarge(r)
+                              : handleIclDecisionChange(r, 'pending'))
+                        }
+                      >
+                        ×
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
