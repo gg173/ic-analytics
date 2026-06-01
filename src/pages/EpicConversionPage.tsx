@@ -332,8 +332,20 @@ function sortEpicRecords(
 }
 
 export function EpicConversionPage() {
-  const { records, loading, error, insertRows, setCompletion, setDischargeDetails, submitDischarge, undoDischarge, setIclDecision, deleteImport } =
-    useEpicConversionRecords();
+  const {
+    records,
+    loading,
+    error,
+    insertRows,
+    setCompletion,
+    changeFromDischargePending,
+    changeFromEpisodeConversionPending,
+    setDischargeDetails,
+    submitDischarge,
+    undoDischarge,
+    setIclDecision,
+    deleteImport,
+  } = useEpicConversionRecords();
   const { user, profile } = useAuth();
   const convertedRecords = useMemo(
     () => records.filter((r) => r.completed_at != null),
@@ -373,6 +385,10 @@ export function EpicConversionPage() {
     () => new Map()
   );
   const [submittingIclDecisions, setSubmittingIclDecisions] = useState(false);
+  const [statusChangePrompt, setStatusChangePrompt] = useState<{
+    record: EpicConversionRecord;
+    flow: 'discharge' | 'episode';
+  } | null>(null);
   const [stackExpandMode, setStackExpandMode] = useState<'none' | 'main' | 'split'>('none');
   const [epicTableSort, setEpicTableSort] = useState<{
     key: EpicTableSortKey;
@@ -940,6 +956,53 @@ export function EpicConversionPage() {
     setUpdatingId(null);
   };
 
+  const confirmStatusChange = async (target: 'icl' | 'episode' | 'discharge') => {
+    const prompt = statusChangePrompt;
+    if (!prompt) return;
+
+    const { record, flow } = prompt;
+    if (flow === 'discharge' && target === 'discharge') return;
+    if (flow === 'episode' && target === 'episode') return;
+
+    const decisionBy = emailToUsername(user?.email ?? profile?.email);
+    setUpdatingId(record.id);
+    setStatusError(null);
+
+    const result =
+      flow === 'discharge' && (target === 'icl' || target === 'episode')
+        ? await changeFromDischargePending(
+            record.id,
+            target,
+            { episode_conversion_strategy: record.episode_conversion_strategy },
+            target === 'episode' ? decisionBy : null
+          )
+        : flow === 'episode' && (target === 'icl' || target === 'discharge')
+          ? await changeFromEpisodeConversionPending(
+              record.id,
+              target,
+              {
+                episode_conversion_strategy: record.episode_conversion_strategy,
+                icl_decision: record.icl_decision,
+              },
+              target === 'discharge' ? decisionBy : null
+            )
+          : { error: 'Invalid status change.' };
+
+    if (result.error) {
+      setStatusError(result.error);
+    } else {
+      setStatusChangePrompt(null);
+      setActiveTab(
+        target === 'icl'
+          ? ICL_REASSESSMENT_STRATEGY
+          : target === 'episode'
+            ? EPISODE_CONVERSION_STRATEGY
+            : DISCHARGE_STRATEGY
+      );
+    }
+    setUpdatingId(null);
+  };
+
   const handleDeleteImport = async (filename: string, importedAt: string, count: number) => {
     const confirmed = window.confirm(
       `Delete import "${filename}" (${count} rows)? This cannot be undone.`
@@ -1353,6 +1416,7 @@ export function EpicConversionPage() {
                   variant: 'status',
                   fill: 'main',
                   statusInput: 'radio',
+                  showChangeStatus: true,
                   expandTarget: 'main',
                 }
               )}
@@ -1410,6 +1474,73 @@ export function EpicConversionPage() {
         )}
       </>
     )}
+    {statusChangePrompt && (
+      <div
+        className="hc-modal-backdrop"
+        role="presentation"
+        onClick={() => setStatusChangePrompt(null)}
+      >
+        <div
+          className="hc-modal hc-modal--discharge-status"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="epic-status-change-title"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <header className="hc-modal-header">
+            <h2 id="epic-status-change-title">Change status</h2>
+            <button
+              type="button"
+              className="hc-btn hc-btn-ghost hc-modal-close"
+              aria-label="Close"
+              onClick={() => setStatusChangePrompt(null)}
+            >
+              ×
+            </button>
+          </header>
+          <p className="hc-discharge-status-change-lead">
+            MRN {statusChangePrompt.record.mrn} — choose where to move this record:
+          </p>
+          <div className="hc-discharge-status-change-actions">
+            <button
+              type="button"
+              className="hc-btn hc-btn-primary"
+              disabled={updatingId === statusChangePrompt.record.id}
+              onClick={() => void confirmStatusChange('icl')}
+            >
+              ICL Decision Required
+            </button>
+            {statusChangePrompt.flow === 'discharge' ? (
+              <button
+                type="button"
+                className="hc-btn hc-btn-primary"
+                disabled={updatingId === statusChangePrompt.record.id}
+                onClick={() => void confirmStatusChange('episode')}
+              >
+                Episode Conversion
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="hc-btn hc-btn-primary"
+                disabled={updatingId === statusChangePrompt.record.id}
+                onClick={() => void confirmStatusChange('discharge')}
+              >
+                {strategyTabLabel(DISCHARGE_STRATEGY)}
+              </button>
+            )}
+            <button
+              type="button"
+              className="hc-btn hc-btn-ghost"
+              disabled={updatingId === statusChangePrompt.record.id}
+              onClick={() => setStatusChangePrompt(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     </>
   );
 
@@ -1424,6 +1555,7 @@ export function EpicConversionPage() {
       compact?: boolean;
       compactMode?: 'icl-decision' | 'completion' | 'discharge-submitted';
       statusInput?: 'checkbox' | 'radio';
+      showChangeStatus?: boolean;
       iclStagedDecisions?: boolean;
       expandTarget?: 'main' | 'split';
     } = {
@@ -1624,12 +1756,14 @@ export function EpicConversionPage() {
       hideHeader?: boolean;
       iclStagedDecisions?: boolean;
       statusInput?: 'checkbox' | 'radio';
+      showChangeStatus?: boolean;
     }
   ) {
     const showIclDecision = options.variant === 'icl';
     const showDischargeDetails = options.variant === 'discharge';
     const showIclStagedDecisions = options.iclStagedDecisions === true && showIclDecision;
     const useStatusRadio = options.statusInput === 'radio';
+    const showChangeStatus = options.showChangeStatus === true && useStatusRadio;
     const hideHeader = options.hideHeader === true;
     const displayRecords = epicTableSort
       ? sortEpicRecords(groupRecords, epicTableSort)
@@ -1860,6 +1994,15 @@ export function EpicConversionPage() {
                       <div className="hc-discharge-action">
                         <button
                           type="button"
+                          className="hc-btn hc-discharge-action-btn hc-discharge-change-status-btn"
+                          disabled={updatingId === r.id}
+                          aria-label="Change status"
+                          onClick={() => setStatusChangePrompt({ record: r, flow: 'discharge' })}
+                        >
+                          Change Status
+                        </button>
+                        <button
+                          type="button"
                           className={`hc-btn hc-discharge-action-btn${
                             canSubmitDischarge ? ' hc-btn-primary' : ''
                           }`}
@@ -1899,37 +2042,50 @@ export function EpicConversionPage() {
                       </label>
                     </div>
                   ) : useStatusRadio ? (
-                    <div
-                      className="hc-status-radios"
-                      role="radiogroup"
-                      aria-label="Conversion status"
-                    >
-                      <label className="hc-status-radio-choice">
-                        <input
-                          type="radio"
-                          name={`epic-status-${r.id}`}
-                          className="hc-status-radio"
-                          checked={r.completed_at == null}
+                    <div className="hc-status-conversion">
+                      <div
+                        className="hc-status-radios"
+                        role="radiogroup"
+                        aria-label="Conversion status"
+                      >
+                        <label className="hc-status-radio-choice">
+                          <input
+                            type="radio"
+                            name={`epic-status-${r.id}`}
+                            className="hc-status-radio"
+                            checked={r.completed_at == null}
+                            disabled={updatingId === r.id}
+                            onChange={() => {
+                              if (r.completed_at) void handleToggleCompleted(r, false);
+                            }}
+                          />
+                          <span>Pending</span>
+                        </label>
+                        <label className="hc-status-radio-choice">
+                          <input
+                            type="radio"
+                            name={`epic-status-${r.id}`}
+                            className="hc-status-radio"
+                            checked={r.completed_at != null}
+                            disabled={updatingId === r.id}
+                            onChange={() => {
+                              if (!r.completed_at) void handleToggleCompleted(r, true);
+                            }}
+                          />
+                          <span>Converted</span>
+                        </label>
+                      </div>
+                      {showChangeStatus && (
+                        <button
+                          type="button"
+                          className="hc-status-reclassify"
                           disabled={updatingId === r.id}
-                          onChange={() => {
-                            if (r.completed_at) void handleToggleCompleted(r, false);
-                          }}
-                        />
-                        <span>Pending</span>
-                      </label>
-                      <label className="hc-status-radio-choice">
-                        <input
-                          type="radio"
-                          name={`epic-status-${r.id}`}
-                          className="hc-status-radio"
-                          checked={r.completed_at != null}
-                          disabled={updatingId === r.id}
-                          onChange={() => {
-                            if (!r.completed_at) void handleToggleCompleted(r, true);
-                          }}
-                        />
-                        <span>Converted</span>
-                      </label>
+                          aria-label="Change status"
+                          onClick={() => setStatusChangePrompt({ record: r, flow: 'episode' })}
+                        >
+                          Change Status
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <div className="hc-status-row">

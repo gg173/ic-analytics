@@ -6,7 +6,16 @@ import type {
   EpicConversionRecord,
   IclDecision,
 } from '../types';
-import { countStrategyBreakdown, type StrategyBreakdown } from '../progress/recordStrategyTabs';
+import {
+  countStrategyBreakdown,
+  DISCHARGE_STRATEGY,
+  EPISODE_CONVERSION_STRATEGY,
+  ICL_REASSESSMENT_STRATEGY,
+  type StrategyBreakdown,
+} from '../progress/recordStrategyTabs';
+
+export type DischargeStatusTarget = 'icl' | 'episode';
+export type EpisodeConversionStatusTarget = 'icl' | 'discharge';
 
 export interface DischargeDetailsUpdate {
   discharge_date_source: DischargeDateSource | null;
@@ -240,6 +249,145 @@ export function useEpicConversionRecords() {
     return { error: null as string | null };
   }, []);
 
+  const clearDischargePendingFields = {
+    discharge_date_source: null,
+    discharge_date: null,
+    discharge_reason: null,
+  } as const;
+
+  const changeFromDischargePending = useCallback(
+    async (
+      id: string,
+      target: DischargeStatusTarget,
+      context: {
+        episode_conversion_strategy: string | null;
+      },
+      decisionBy: string | null
+    ) => {
+      const strategy = context.episode_conversion_strategy;
+      const isIclReassessment = strategy === ICL_REASSESSMENT_STRATEGY;
+      const isDirectDischarge = strategy === DISCHARGE_STRATEGY;
+
+      let update: Record<string, unknown>;
+      if (target === 'icl') {
+        if (isIclReassessment) {
+          update = {
+            ...clearDischargePendingFields,
+            icl_decision: null,
+            icl_decision_by: null,
+            icl_decision_at: null,
+          };
+        } else if (isDirectDischarge) {
+          update = {
+            ...clearDischargePendingFields,
+            episode_conversion_strategy: ICL_REASSESSMENT_STRATEGY,
+            icl_decision: null,
+            icl_decision_by: null,
+            icl_decision_at: null,
+          };
+        } else {
+          return { error: 'This record cannot be moved to ICL Decision from discharge.' };
+        }
+      } else if (isIclReassessment) {
+        update = {
+          ...clearDischargePendingFields,
+          icl_decision: 'convert',
+          icl_decision_by: decisionBy,
+          icl_decision_at: decisionBy ? new Date().toISOString() : null,
+        };
+      } else if (isDirectDischarge) {
+        update = {
+          ...clearDischargePendingFields,
+          episode_conversion_strategy: EPISODE_CONVERSION_STRATEGY,
+        };
+      } else {
+        return { error: 'This record cannot be moved to Episode Conversion from discharge.' };
+      }
+
+      const updated_at = new Date().toISOString();
+      const { error: updateError } = await supabase
+        .from('epic_conversion_records')
+        .update({ ...update, updated_at })
+        .eq('id', id);
+
+      if (updateError) return { error: updateError.message };
+
+      setRecords((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, ...update, updated_at } : r))
+      );
+      return { error: null as string | null };
+    },
+    []
+  );
+
+  const changeFromEpisodeConversionPending = useCallback(
+    async (
+      id: string,
+      target: EpisodeConversionStatusTarget,
+      context: {
+        episode_conversion_strategy: string | null;
+        icl_decision: EpicConversionRecord['icl_decision'];
+      },
+      decisionBy: string | null
+    ) => {
+      const strategy = context.episode_conversion_strategy;
+      const isIclReassessment = strategy === ICL_REASSESSMENT_STRATEGY;
+      const isEpisodeConversion = strategy === EPISODE_CONVERSION_STRATEGY;
+      const completionClears = { completed_by: null, completed_at: null } as const;
+
+      let update: Record<string, unknown>;
+      if (target === 'discharge') {
+        if (isIclReassessment && context.icl_decision === 'convert') {
+          update = {
+            ...clearDischargePendingFields,
+            ...completionClears,
+            icl_decision: 'discharge',
+            icl_decision_by: decisionBy,
+            icl_decision_at: decisionBy ? new Date().toISOString() : null,
+          };
+        } else if (isEpisodeConversion) {
+          update = {
+            ...completionClears,
+            episode_conversion_strategy: DISCHARGE_STRATEGY,
+          };
+        } else {
+          return { error: 'This record cannot be moved to discharge from episode conversion.' };
+        }
+      } else if (isIclReassessment && context.icl_decision === 'convert') {
+        update = {
+          ...completionClears,
+          icl_decision: null,
+          icl_decision_by: null,
+          icl_decision_at: null,
+        };
+      } else if (isEpisodeConversion) {
+        update = {
+          ...completionClears,
+          episode_conversion_strategy: ICL_REASSESSMENT_STRATEGY,
+          icl_decision: null,
+          icl_decision_by: null,
+          icl_decision_at: null,
+        };
+      } else {
+        return { error: 'This record cannot be moved to ICL Decision from episode conversion.' };
+      }
+
+      const updated_at = new Date().toISOString();
+      const { error: updateError } = await supabase
+        .from('epic_conversion_records')
+        .update({ ...update, updated_at })
+        .eq('id', id);
+
+      if (updateError) return { error: updateError.message };
+
+      setRecords((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, ...update, updated_at } : r))
+      );
+      return { error: null as string | null };
+    },
+    []
+  );
+
   const setCompletion = useCallback(
     async (id: string, completedBy: string | null) => {
       const completed_by = completedBy;
@@ -286,6 +434,8 @@ export function useEpicConversionRecords() {
     refresh,
     insertRows,
     setCompletion,
+    changeFromDischargePending,
+    changeFromEpisodeConversionPending,
     setDischargeDetails,
     submitDischarge,
     undoDischarge,

@@ -2678,6 +2678,11 @@ select.hc-cell-input {
   width: 10.5rem;
 }
 
+.hc-table-wrap--wide .hc-col-status:has(.hc-status-conversion) {
+  min-width: 11.5rem;
+  width: 11.5rem;
+}
+
 .hc-col-status--icl {
   min-width: 9rem;
   width: 9rem;
@@ -2759,6 +2764,8 @@ select.hc-cell-input {
 
 .hc-discharge-action {
   display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
   width: 100%;
   min-width: 0;
   height: 100%;
@@ -2767,8 +2774,7 @@ select.hc-cell-input {
 .hc-discharge-action-btn {
   flex: 1 1 auto;
   width: 100%;
-  height: 100%;
-  min-height: 100%;
+  min-height: 0;
   margin: 0;
   padding: 0.15rem;
   border-radius: 0.25rem;
@@ -2777,6 +2783,13 @@ select.hc-cell-input {
   line-height: 1.1;
   text-align: center;
   white-space: normal;
+}
+
+.hc-discharge-change-status-btn {
+  flex: 0 0 auto;
+  color: #b45309;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
 }
 
 .hc-discharge-field-row {
@@ -2947,6 +2960,36 @@ select.hc-cell-input {
 .hc-icl-decision-select--chosen {
   border-color: #1d4ed8;
   color: #1d4ed8;
+}
+
+.hc-status-conversion {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.hc-status-reclassify {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #b45309;
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+  cursor: pointer;
+}
+
+.hc-status-reclassify:hover:not(:disabled) {
+  color: #92400e;
+}
+
+.hc-status-reclassify:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .hc-status-radios {
@@ -3195,6 +3238,24 @@ select.hc-cell-input {
 
 .hc-modal-close {
   flex-shrink: 0;
+}
+
+.hc-modal--discharge-status {
+  width: min(420px, 100%);
+  max-height: none;
+}
+
+.hc-discharge-status-change-lead {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  color: #334155;
+}
+
+.hc-discharge-status-change-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .hc-user-mgmt-add {
