@@ -5,3 +5,9 @@ enabled = true
 
 [db]
 major_version = 15
+
+[functions.app-login]
+verify_jwt = false
+
+[functions.provision-auth-user]
+verify_jwt = true

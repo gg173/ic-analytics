@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
+import { readEdgeFunctionError } from '../../lib/functionErrors';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { resolveUserAccess, type UserAccess } from '../access';
 import type { Organization, Profile } from '../types';
@@ -210,19 +211,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       body: { email: normalizedEmail, password },
     });
 
-    if (!fnError && fnData?.access_token && !fnData?.error) {
+    const fnPayload = fnData as {
+      access_token?: string;
+      refresh_token?: string;
+      error?: string;
+      profile?: Profile;
+      organization?: Organization;
+      user?: { id?: string };
+    } | null;
+
+    if (!fnError && fnPayload?.access_token && !fnPayload?.error) {
       const { error: setSessionError } = await supabase.auth.setSession({
-        access_token: fnData.access_token,
-        refresh_token: fnData.refresh_token,
+        access_token: fnPayload.access_token,
+        refresh_token: fnPayload.refresh_token ?? '',
       });
 
       if (setSessionError) {
         return { error: setSessionError.message };
       }
 
-      const nextProfile = (fnData.profile as Profile) ?? profileData;
-      const nextOrg = (fnData.organization as Organization) ?? organizationData;
-      const sessionUserId = (fnData as { user?: { id?: string } }).user?.id;
+      const nextProfile = fnPayload.profile ?? profileData;
+      const nextOrg = fnPayload.organization ?? organizationData;
+      const sessionUserId = fnPayload.user?.id;
       if (sessionUserId) loadedUserIdRef.current = sessionUserId;
       startTransition(() => {
         setProfile(nextProfile);
@@ -232,7 +242,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: null };
     }
 
-    return { error: fnData?.error ?? fnError?.message ?? 'Invalid email or password' };
+    const fnMessage = await readEdgeFunctionError(fnError, fnData);
+    return { error: fnMessage ?? 'Invalid email or password' };
   }, []);
 
   const signOut = useCallback(async () => {

@@ -3232,3 +3232,10 @@ select.hc-cell-input {
   font-family: inherit;
   background: #fff;
 }
+
+.hc-user-mgmt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  justify-content: flex-end;
+}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { readEdgeFunctionError } from '../../lib/functionErrors';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import type { UserRole } from '../types';
@@ -25,6 +26,13 @@ function parseUsersPayload(data: unknown): ManagedUser[] {
   if (Array.isArray(data)) return data as ManagedUser[];
   if ('error' in data && (data as { error?: string }).error) return [];
   return [];
+}
+
+async function provisionSignIn(email: string): Promise<string | null> {
+  const { data, error } = await supabase.functions.invoke('provision-auth-user', {
+    body: { email: email.trim().toLowerCase() },
+  });
+  return readEdgeFunctionError(error, data);
 }
 
 export function UserManagementModal({ open, onClose }: UserManagementModalProps) {
@@ -108,6 +116,8 @@ export function UserManagementModal({ open, onClose }: UserManagementModalProps)
       return;
     }
 
+    const addedEmail = newEmail.trim().toLowerCase();
+
     if (result?.profile) {
       setUsers((prev) =>
         [...prev, result.profile!].sort((a, b) => a.email.localeCompare(b.email))
@@ -116,9 +126,19 @@ export function UserManagementModal({ open, onClose }: UserManagementModalProps)
       await loadUsers();
     }
 
+    const provisionMessage = await provisionSignIn(addedEmail);
+    if (provisionMessage) {
+      setError(
+        `User profile created but sign-in setup failed: ${provisionMessage}. Redeploy Edge Functions if this persists.`
+      );
+      setNewEmail('');
+      setNewRole('uhn_editor');
+      return;
+    }
+
     setNewEmail('');
     setNewRole('uhn_editor');
-    setMessage('User added');
+    setMessage('User added and ready to sign in');
   };
 
   const handleRoleChange = async (userId: string, role: UserRole) => {
@@ -150,6 +170,22 @@ export function UserManagementModal({ open, onClose }: UserManagementModalProps)
       setUsers((prev) => prev.map((u) => (u.id === userId ? result.profile! : u)));
       setMessage('Role updated');
     }
+  };
+
+  const handleProvisionSignIn = async (user: ManagedUser) => {
+    setPendingId(user.id);
+    setError(null);
+    setMessage(null);
+
+    const provisionMessage = await provisionSignIn(user.email);
+    setPendingId(null);
+
+    if (provisionMessage) {
+      setError(`Sign-in setup failed for ${user.email}: ${provisionMessage}`);
+      return;
+    }
+
+    setMessage(`Sign-in ready for ${user.email}`);
   };
 
   const handleRemove = async (user: ManagedUser) => {
@@ -270,7 +306,15 @@ export function UserManagementModal({ open, onClose }: UserManagementModalProps)
                           ))}
                         </select>
                       </td>
-                      <td>
+                      <td className="hc-user-mgmt-actions">
+                        <button
+                          type="button"
+                          className="hc-btn hc-btn-ghost"
+                          disabled={busy}
+                          onClick={() => void handleProvisionSignIn(user)}
+                        >
+                          Set up sign-in
+                        </button>
                         <button
                           type="button"
                           className="hc-btn hc-btn-ghost hc-btn-danger"
