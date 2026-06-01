@@ -21,10 +21,15 @@ export async function findAuthUserByEmail(
 ): Promise<User | null> {
   const normalizedEmail = email.trim().toLowerCase();
 
-  const byEmail = await admin.auth.admin.getUserByEmail(normalizedEmail);
-  if (byEmail.data.user) return byEmail.data.user;
-  if (byEmail.error && !byEmail.error.message.toLowerCase().includes('not found')) {
-    throw byEmail.error;
+  if (normalizedEmail.length >= 3) {
+    const { data, error } = await admin.auth.admin.listUsers({
+      page: 1,
+      perPage: 50,
+      filter: normalizedEmail,
+    });
+    if (error) throw error;
+    const exact = data.users.find((u) => u.email?.toLowerCase() === normalizedEmail);
+    if (exact) return exact;
   }
 
   let page = 1;
