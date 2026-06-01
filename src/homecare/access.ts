@@ -23,18 +23,8 @@ export function resolveUserAccess(
   const isAppAdmin = role === 'app_admin';
   const slug = orgSlug ?? '';
 
-  const canAccessHomecare =
-    isAppAdmin ||
-    role === 'uhn_admin' ||
-    role === 'uhn_editor' ||
-    role === 'spo_viewer';
-
-  const canAccessAnalytics =
-    isAppAdmin ||
-    role === 'uhn_admin' ||
-    role === 'uhn_editor' ||
-    role === 'vha_admin' ||
-    role === 'ic_lead_hcs';
+  const canAccessHomecare = isAppAdmin;
+  const canAccessAnalytics = isAppAdmin;
 
   const canAccessEpic =
     isAppAdmin ||
@@ -94,7 +84,11 @@ export function resolvePostLoginPath(
   ) {
     return redirectFrom;
   }
-  return access.defaultPath === '/' ? '/analytics' : access.defaultPath;
+  return access.defaultPath;
+}
+
+export function hasAnyModuleAccess(access: UserAccess): boolean {
+  return access.canAccessAnalytics || access.canAccessHomecare || access.canAccessEpic;
 }
 
 function pathAllowed(path: string, access: UserAccess): boolean {

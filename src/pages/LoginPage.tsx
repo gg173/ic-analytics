@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { resolvePostLoginPath } from '../homecare/access';
+import { hasAnyModuleAccess, resolvePostLoginPath } from '../homecare/access';
 import { useAuth } from '../homecare/hooks/useAuth';
 
 const APP_LOGO_SRC = '/UHN-at-Home.svg';
 
 export function LoginPage() {
   const auth = useAuth();
-  const { user, profile, signIn } = auth;
+  const { user, profile, signIn, signOut } = auth;
   const location = useLocation();
   const redirectFrom = (location.state as { from?: string } | null)?.from;
   const from = resolvePostLoginPath(redirectFrom, auth);
@@ -17,7 +17,25 @@ export function LoginPage() {
   const [busy, setBusy] = useState(false);
   const canSubmit = email.trim().length > 0 && password.length > 0;
 
-  if (user && profile) return <Navigate to={from} replace />;
+  if (user && profile) {
+    if (!hasAnyModuleAccess(auth)) {
+      return (
+        <div className="hc-login">
+          <div className="hc-panel hc-login-panel hc-unauthorized-panel">
+            <h2>Access not available</h2>
+            <p className="hc-muted">
+              Your account does not have permission to use this workspace. Contact an App Admin if
+              you need access.
+            </p>
+            <button type="button" className="hc-btn hc-btn-secondary" onClick={() => void signOut()}>
+              Sign out
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return <Navigate to={from !== '/' ? from : auth.defaultPath} replace />;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
