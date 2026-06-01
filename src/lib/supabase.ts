@@ -10,13 +10,17 @@ function isSecretKey(key: string | undefined): boolean {
 
 export const supabaseKeyError = (() => {
   if (!supabaseUrl || !supabaseAnonKey) {
-    return 'Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY in .env.local';
+    return 'Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY environment variables.';
   }
   if (isSecretKey(supabaseAnonKey)) {
     return 'VITE_SUPABASE_ANON_KEY must be the publishable (anon) key, not the secret key. In Supabase Dashboard → Project Settings → API, use the publishable key (sb_publishable_... or eyJ... anon).';
   }
   return null;
 })();
+
+export const supabaseSetupHint = import.meta.env.DEV
+  ? 'Copy .env.example to .env.local, fill in your Supabase project URL and publishable key, then restart npm run dev.'
+  : 'Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your hosting provider (e.g. Vercel → Project Settings → Environment Variables), then redeploy. Vite bakes these in at build time.';
 
 export const isSupabaseConfigured = supabaseKeyError === null;
 

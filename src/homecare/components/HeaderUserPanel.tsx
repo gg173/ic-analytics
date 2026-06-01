@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { UserManagementModal } from './UserManagementModal';
 import { useAuth } from '../hooks/useAuth';
 
 function initialsFromEmail(email: string): string {
@@ -28,8 +29,9 @@ function formatHeaderTime(date: Date): string {
 }
 
 export function HeaderUserPanel() {
-  const { user, organization, signOut, canManageHomecareRules } = useAuth();
+  const { user, organization, signOut, canManageHomecareRules, isAppAdmin } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [userMgmtOpen, setUserMgmtOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const menuWrapRef = useRef<HTMLDivElement>(null);
 
@@ -97,6 +99,19 @@ export function HeaderUserPanel() {
                   Admin
                 </Link>
               )}
+              {isAppAdmin && (
+                <button
+                  type="button"
+                  className="hc-header-user-menu-item"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setUserMgmtOpen(true);
+                  }}
+                >
+                  User Management
+                </button>
+              )}
               <button
                 type="button"
                 className="hc-header-user-menu-item"
@@ -116,6 +131,8 @@ export function HeaderUserPanel() {
           <span className="hc-header-user-org">{organization?.name ?? 'Unknown organization'}</span>
         </div>
       </div>
+
+      <UserManagementModal open={userMgmtOpen} onClose={() => setUserMgmtOpen(false)} />
     </div>
   );
 }

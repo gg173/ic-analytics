@@ -8,7 +8,7 @@ SELECT
   seed.display_name
 FROM (
   VALUES
-    ('gary.grewal@uhn.ca', 'uhn', 'uhn_admin', 'Gary Grewal'),
+    ('gary.grewal@uhn.ca', 'uhn', 'app_admin', 'Gary Grewal'),
     ('claire.seymour@uhn.ca', 'uhn', 'uhn_admin', 'Claire Seymour'),
     ('brandi.leblanc@uhn.ca', 'uhn', 'uhn_admin', 'Brandi LeBlanc'),
     ('dkiu@vha.ca', 'vha', 'vha_admin', 'Desmond Kiu'),
@@ -26,7 +26,7 @@ SET
   display_name = seed.display_name
 FROM (
   VALUES
-    ('gary.grewal@uhn.ca', 'uhn', 'uhn_admin', 'Gary Grewal'),
+    ('gary.grewal@uhn.ca', 'uhn', 'app_admin', 'Gary Grewal'),
     ('claire.seymour@uhn.ca', 'uhn', 'uhn_admin', 'Claire Seymour'),
     ('brandi.leblanc@uhn.ca', 'uhn', 'uhn_admin', 'Brandi LeBlanc'),
     ('dkiu@vha.ca', 'vha', 'vha_admin', 'Desmond Kiu'),

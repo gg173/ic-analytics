@@ -1,7 +1,7 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { HeaderUserPanel } from '../homecare/components/HeaderUserPanel';
 import { useAuth } from '../homecare/hooks/useAuth';
-import { isSupabaseConfigured, supabaseKeyError } from '../lib/supabase';
+import { isSupabaseConfigured, supabaseKeyError, supabaseSetupHint } from '../lib/supabase';
 import '../homecare/homecare.css';
 
 const APP_LOGO_SRC = '/UHN-at-Home.svg';
@@ -16,10 +16,7 @@ export function HomecareLayout() {
         <div className="hc-panel hc-error-panel">
           <h1>Supabase configuration error</h1>
           <p>{supabaseKeyError}</p>
-          <p className="hc-muted">
-            Copy <code>.env.example</code> to <code>.env.local</code>, then restart{' '}
-            <code>npm run dev</code>.
-          </p>
+          <p className="hc-muted">{supabaseSetupHint}</p>
           <Link to="/" className="hc-btn hc-btn-secondary">
             Back to sign in
           </Link>
