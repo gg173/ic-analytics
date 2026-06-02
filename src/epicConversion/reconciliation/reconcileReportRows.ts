@@ -3,6 +3,7 @@ import { iclNamesMatch } from './epicIclMatch';
 import {
   getVhaWorkflowStatus,
   isMatchedStatusDiscrepancy,
+  describeStatusDiscrepancy,
   VHA_WORKFLOW_STATUS_LABELS,
 } from './recordWorkflow';
 import type {
@@ -162,8 +163,59 @@ export function reconcileReportRows(
   });
 }
 
+/**
+ * Conversions completed after the most recent Epic report upload cannot be
+ * adjudicated until the next upload; exclude them from discrepancy detection.
+ */
+export function isConversionPendingEpicAdjudication(
+  record: Pick<EpicConversionRecord, 'completed_at'>,
+  latestEpicImportedAt: string | null | undefined
+): boolean {
+  if (!latestEpicImportedAt || !record.completed_at) return false;
+  return record.completed_at > latestEpicImportedAt;
+}
+
+export function getLatestEpicImportedAt(importedAts: Iterable<string>): string | null {
+  let latest: string | null = null;
+  for (const importedAt of importedAts) {
+    if (!latest || importedAt > latest) latest = importedAt;
+  }
+  return latest;
+}
+
 export function isDiscrepancyOutcome(outcome: ReconciliationOutcome): boolean {
   return outcome !== 'validated' && outcome !== 'perfect';
+}
+
+/** Whether a reconciliation row should surface as a discrepancy in the UI. */
+export function isEpicReconciliationDiscrepancy(
+  row: ReconciliationDetailRow,
+  recordsById: Map<string, EpicConversionRecord>,
+  latestEpicImportedAt: string | null | undefined
+): boolean {
+  if (!isDiscrepancyOutcome(row.outcome)) return false;
+  if (!row.matchedRecordId) return true;
+  const record = recordsById.get(row.matchedRecordId);
+  return !record || !isConversionPendingEpicAdjudication(record, latestEpicImportedAt);
+}
+
+/** Summary counts excluding conversions awaiting the next Epic upload. */
+export function summarizeReconciliationOutcomesExcludingPendingAdjudication(
+  details: ReconciliationDetailRow[],
+  recordsById: Map<string, EpicConversionRecord>,
+  latestEpicImportedAt: string | null | undefined
+): Pick<
+  ReconciliationSummary,
+  'validated' | 'statusDiscrepancy' | 'fieldDiscrepancy' | 'unmatched' | 'missingFromEpic'
+> {
+  const rows = details
+    .filter((row) => {
+      if (!row.matchedRecordId) return true;
+      const record = recordsById.get(row.matchedRecordId);
+      return !record || !isConversionPendingEpicAdjudication(record, latestEpicImportedAt);
+    })
+    .map((row) => ({ outcome: row.outcome }));
+  return summarizeReconciliationOutcomes(rows);
 }
 
 export function isValidatedOutcome(outcome: ReconciliationOutcome): boolean {
@@ -206,7 +258,8 @@ export function summarizeReconciliationOutcomes(
 /** Converted VHA patients whose MRN does not appear in the merged Epic report snapshot. */
 export function findConvertedRecordsMissingFromEpic(
   vhaRecords: EpicConversionRecord[],
-  epicRows: EpicConversionReportRow[]
+  epicRows: EpicConversionReportRow[],
+  latestEpicImportedAt?: string | null
 ): ReconciliationDetailRow[] {
   const epicMrns = new Set<string>();
   for (const row of epicRows) {
@@ -217,6 +270,7 @@ export function findConvertedRecordsMissingFromEpic(
   const missing: ReconciliationDetailRow[] = [];
   for (const record of vhaRecords) {
     if (getVhaWorkflowStatus(record) !== 'converted') continue;
+    if (isConversionPendingEpicAdjudication(record, latestEpicImportedAt)) continue;
 
     const key = normalizeMrnForMatch(record.mrn);
     if (!key || epicMrns.has(key)) continue;
@@ -237,6 +291,9 @@ export function findConvertedRecordsMissingFromEpic(
       matchedIcLead: record.ic_lead,
       matchedWorkflowStatus: VHA_WORKFLOW_STATUS_LABELS.converted,
       epicImportFilename: null,
+      matchedCompletedAt: record.completed_at,
+      matchedCompletedBy: record.completed_by,
+      epicReportImportedAt: latestEpicImportedAt ?? null,
     });
   }
 
@@ -276,8 +333,76 @@ export function buildReconciliationDetails(
         ? VHA_WORKFLOW_STATUS_LABELS[workflowStatus]
         : null,
       epicImportFilename: importFilenameById?.get(row.import_id) ?? null,
+      matchedCompletedAt: matched?.completed_at ?? null,
+      matchedCompletedBy: matched?.completed_by ?? null,
+      epicReportImportedAt: null,
     };
   });
+}
+
+function formatReconciliationTimestamp(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const month = d.toLocaleDateString('en-US', { month: 'short' });
+  const hours = d.getHours().toString().padStart(2, '0');
+  const minutes = d.getMinutes().toString().padStart(2, '0');
+  return `${month} ${d.getDate()} ${hours}:${minutes}`;
+}
+
+function reconciliationActorUsername(value: string | null | undefined): string {
+  if (!value?.trim()) return 'unknown';
+  return value.includes('@') ? value.split('@')[0] : value.trim();
+}
+
+/** Result cell text for VHA-converted patients absent from the Epic report snapshot. */
+export function formatMissingFromEpicResultSummary(row: ReconciliationDetailRow): string {
+  const conversionPart = row.matchedCompletedAt
+    ? `${formatReconciliationTimestamp(row.matchedCompletedAt)} by ${reconciliationActorUsername(row.matchedCompletedBy)}`
+    : reconciliationActorUsername(row.matchedCompletedBy) !== 'unknown'
+      ? `by ${reconciliationActorUsername(row.matchedCompletedBy)}`
+      : '—';
+
+  const epicPart = row.epicReportImportedAt
+    ? formatReconciliationTimestamp(row.epicReportImportedAt)
+    : '—';
+
+  return `Marked Converted (${conversionPart}) but Not in Epic Conversion Report (${epicPart})`;
+}
+
+export interface EpicMatchedSnapshot {
+  mrn: string;
+  pathwayDisplay: string;
+  icLead: string | null;
+}
+
+/** Epic report row linked to a VHA record (excludes missing-from-Epic synthetic rows). */
+export function reconciliationRowHasEpicReportMatch(row: ReconciliationDetailRow): boolean {
+  return (
+    !!row.matchedRecordId &&
+    row.outcome !== 'missing_from_epic' &&
+    !row.reportRowId.startsWith('vha-missing:') &&
+    !!row.mrn?.trim()
+  );
+}
+
+export function epicPathwayDisplayForRow(row: ReconciliationDetailRow): string {
+  return row.pathway?.trim() || row.epicEpisode?.trim() || '—';
+}
+
+/** Epic fields from the conversion report for each matched VHA record. */
+export function buildEpicSnapshotByMatchedRecordId(
+  unifiedDetails: ReconciliationDetailRow[]
+): Map<string, EpicMatchedSnapshot> {
+  const map = new Map<string, EpicMatchedSnapshot>();
+  for (const row of unifiedDetails) {
+    if (!reconciliationRowHasEpicReportMatch(row) || !row.matchedRecordId) continue;
+    map.set(row.matchedRecordId, {
+      mrn: row.mrn.trim(),
+      pathwayDisplay: epicPathwayDisplayForRow(row),
+      icLead: row.icLead?.trim() || null,
+    });
+  }
+  return map;
 }
 
 export type EpicRecordValidationStatus =
@@ -288,13 +413,11 @@ export type EpicRecordValidationStatus =
 /** Human-readable discrepancy detail for a reconciliation row. */
 export function describeReconciliationDiscrepancy(row: ReconciliationDetailRow): string {
   if (row.outcome === 'missing_from_epic') {
-    return 'Not in Epic Conversion Report';
+    return formatMissingFromEpicResultSummary(row);
   }
 
   if (row.outcome === 'status_discrepancy') {
-    return row.matchedWorkflowStatus
-      ? `VHA status: ${row.matchedWorkflowStatus}`
-      : 'VHA workflow status discrepancy';
+    return describeStatusDiscrepancy(row.matchedWorkflowStatus);
   }
 
   if (row.outcome === 'field_discrepancy' || row.outcome === 'incorrect') {
@@ -313,13 +436,24 @@ export function describeReconciliationDiscrepancy(row: ReconciliationDetailRow):
 /** Maps VHA record IDs to Epic validation status from unified reconciliation. */
 export function buildEpicValidationStatusByRecordId(
   unifiedDetails: ReconciliationDetailRow[],
-  hasEpicReports: boolean
+  hasEpicReports: boolean,
+  options?: {
+    recordsById?: Map<string, EpicConversionRecord>;
+    latestEpicImportedAt?: string | null;
+  }
 ): Map<string, EpicRecordValidationStatus> {
   const map = new Map<string, EpicRecordValidationStatus>();
   if (!hasEpicReports) return map;
 
+  const { recordsById, latestEpicImportedAt } = options ?? {};
+
   for (const row of unifiedDetails) {
     if (!row.matchedRecordId) continue;
+
+    const record = recordsById?.get(row.matchedRecordId);
+    if (record && isConversionPendingEpicAdjudication(record, latestEpicImportedAt)) {
+      continue;
+    }
 
     if (isValidatedOutcome(row.outcome)) {
       map.set(row.matchedRecordId, {

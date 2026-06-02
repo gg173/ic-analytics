@@ -77,6 +77,11 @@ export interface ReconciliationDetailRow {
   matchedIcLead: string | null;
   matchedWorkflowStatus: string | null;
   epicImportFilename: string | null;
+  /** When the matched VHA record was marked converted (missing-from-Epic rows). */
+  matchedCompletedAt: string | null;
+  matchedCompletedBy: string | null;
+  /** Timestamp of the Epic conversion report snapshot used for reconciliation. */
+  epicReportImportedAt: string | null;
 }
 
 export const RECONCILIATION_OUTCOME_LABELS: Record<ReconciliationOutcome, string> = {

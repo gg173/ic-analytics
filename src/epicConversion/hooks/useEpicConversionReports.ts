@@ -6,9 +6,12 @@ import { mergeEpicReportRowsByMrn } from '../reconciliation/mergeEpicReportRows'
 import {
   buildReconciliationDetails,
   findConvertedRecordsMissingFromEpic,
+  getLatestEpicImportedAt,
   isDiscrepancyOutcome,
+  isEpicReconciliationDiscrepancy,
   reconcileReportRows,
   summarizeReconciliationOutcomes,
+  summarizeReconciliationOutcomesExcludingPendingAdjudication,
 } from '../reconciliation/reconcileReportRows';
 import type {
   EpicConversionReconciliationResult,
@@ -150,6 +153,9 @@ export function useEpicConversionReports(vhaRecords: EpicConversionRecord[]) {
       .filter((row) => row.importedAt);
 
     const mergedRows = mergeEpicReportRowsByMrn(rowsWithMeta);
+    const latestEpicImportedAt = getLatestEpicImportedAt(
+      [...importMetaById.values()].map((imp) => imp.imported_at)
+    );
     const reconciliation = reconcileReportRows(mergedRows, vhaRecords);
     const recordsById = new Map(vhaRecords.map((r) => [r.id, r]));
     const epicDetails = buildReconciliationDetails(
@@ -158,7 +164,11 @@ export function useEpicConversionReports(vhaRecords: EpicConversionRecord[]) {
       recordsById,
       importFilenameById
     );
-    const missingFromEpic = findConvertedRecordsMissingFromEpic(vhaRecords, mergedRows);
+    const missingFromEpic = findConvertedRecordsMissingFromEpic(
+      vhaRecords,
+      mergedRows,
+      latestEpicImportedAt
+    );
     const details = [...epicDetails, ...missingFromEpic];
     setUnifiedReconciliationDetails(details);
     return details;
@@ -456,8 +466,22 @@ export function useEpicConversionReports(vhaRecords: EpicConversionRecord[]) {
     [detailsImportId, refresh, loadUnifiedReconciliationDetails]
   );
 
-  const unifiedDiscrepancyDetails = unifiedReconciliationDetails.filter((row) =>
-    isDiscrepancyOutcome(row.outcome)
+  const recordsById = useMemo(
+    () => new Map(vhaRecords.map((r) => [r.id, r])),
+    [vhaRecords]
+  );
+
+  const latestEpicImportedAt = useMemo(
+    () => (imports.length ? getLatestEpicImportedAt(imports.map((imp) => imp.imported_at)) : null),
+    [imports]
+  );
+
+  const unifiedDiscrepancyDetails = useMemo(
+    () =>
+      unifiedReconciliationDetails.filter((row) =>
+        isEpicReconciliationDiscrepancy(row, recordsById, latestEpicImportedAt)
+      ),
+    [unifiedReconciliationDetails, recordsById, latestEpicImportedAt]
   );
 
   const unifiedSummary = useMemo((): ReconciliationSummary | null => {
@@ -471,9 +495,13 @@ export function useEpicConversionReports(vhaRecords: EpicConversionRecord[]) {
       filename: latest.source_filename,
       importedAt: latest.imported_at,
       totalRows: epicRowCount,
-      ...summarizeReconciliationOutcomes(unifiedReconciliationDetails),
+      ...summarizeReconciliationOutcomesExcludingPendingAdjudication(
+        unifiedReconciliationDetails,
+        recordsById,
+        latestEpicImportedAt
+      ),
     };
-  }, [imports, unifiedReconciliationDetails]);
+  }, [imports, unifiedReconciliationDetails, recordsById, latestEpicImportedAt]);
 
   const discrepancyDetails = reconciliationDetails.filter((row) =>
     isDiscrepancyOutcome(row.outcome)

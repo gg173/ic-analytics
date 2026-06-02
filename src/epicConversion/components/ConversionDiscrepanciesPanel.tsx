@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { iclNamesMatch } from '../reconciliation/epicIclMatch';
-import { normalizeMrnForMatch } from '../reconciliation/reconcileReportRows';
+import {
+  formatMissingFromEpicResultSummary,
+  normalizeMrnForMatch,
+} from '../reconciliation/reconcileReportRows';
+import { describeStatusDiscrepancy } from '../reconciliation/recordWorkflow';
 import {
   RECONCILIATION_OUTCOME_LABELS,
   type ReconciliationDetailRow,
@@ -57,14 +61,10 @@ function buildResultSummary(row: ReconciliationDetailRow): string {
     parts.push('ICL mismatch');
   }
   if (row.outcome === 'status_discrepancy') {
-    parts.push(
-      row.matchedWorkflowStatus
-        ? `VHA status: ${row.matchedWorkflowStatus}`
-        : 'VHA workflow status discrepancy'
-    );
+    parts.push(describeStatusDiscrepancy(row.matchedWorkflowStatus));
   }
   if (row.outcome === 'missing_from_epic') {
-    return 'Marked Converted but Not in Epic Conversion Report';
+    return formatMissingFromEpicResultSummary(row);
   }
 
   if (row.outcome === 'validated' || row.outcome === 'perfect') {

@@ -3,9 +3,16 @@ import { parseEpicConversionXlsxBuffer } from '../epicConversion/ingest/parseEpi
 import { useEpicConversionRecords } from '../epicConversion/hooks/useEpicConversionRecords';
 import { useEpicConversionReports } from '../epicConversion/hooks/useEpicConversionReports';
 import { ConversionDiscrepanciesPanel } from '../epicConversion/components/ConversionDiscrepanciesPanel';
+import {
+  EnrolmentUploadDialog,
+  type EnrolmentUploadDialogPhase,
+} from '../epicConversion/components/EnrolmentUploadDialog';
 import { ProgressTracker } from '../epicConversion/components/ProgressTracker';
 import {
+  buildEpicSnapshotByMatchedRecordId,
   buildEpicValidationStatusByRecordId,
+  getLatestEpicImportedAt,
+  isConversionPendingEpicAdjudication,
   isValidatedOutcome,
   matchesReconciliationOutcomeFilter,
 } from '../epicConversion/reconciliation/reconcileReportRows';
@@ -443,9 +450,16 @@ export function EpicConversionPage() {
     () => buildUnifiedImportActivity(importActivity, reportImports, importSummariesById),
     [importActivity, reportImports, importSummariesById]
   );
-  const enrolmentFileRef = useRef<HTMLInputElement>(null);
   const epicReportsFileRef = useRef<HTMLInputElement>(null);
   const [uploadingEnrolment, setUploadingEnrolment] = useState(false);
+  const [enrolmentDialogOpen, setEnrolmentDialogOpen] = useState(false);
+  const [enrolmentDialogPhase, setEnrolmentDialogPhase] =
+    useState<EnrolmentUploadDialogPhase>('form');
+  const [enrolmentDialogFile, setEnrolmentDialogFile] = useState<File | null>(null);
+  const [enrolmentDialogError, setEnrolmentDialogError] = useState<string | null>(null);
+  const [enrolmentDialogSuccessMessage, setEnrolmentDialogSuccessMessage] = useState<
+    string | null
+  >(null);
   const [uploadingEpicReport, setUploadingEpicReport] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccessMessage, setUploadSuccessMessage] = useState<string | null>(null);
@@ -698,24 +712,45 @@ export function EpicConversionPage() {
     loadUnifiedReconciliationDetails,
   ]);
 
+  const latestEpicImportedAt = useMemo(
+    () =>
+      reportImports.length > 0
+        ? getLatestEpicImportedAt(reportImports.map((imp) => imp.imported_at))
+        : null,
+    [reportImports]
+  );
+
+  const recordsById = useMemo(() => new Map(records.map((r) => [r.id, r])), [records]);
+
   const validatedRecordIds = useMemo(() => {
     const ids = new Set<string>();
     for (const row of unifiedReconciliationDetails) {
-      if (row.matchedRecordId && isValidatedOutcome(row.outcome)) {
-        ids.add(row.matchedRecordId);
+      if (!row.matchedRecordId || !isValidatedOutcome(row.outcome)) continue;
+      const record = recordsById.get(row.matchedRecordId);
+      if (record && isConversionPendingEpicAdjudication(record, latestEpicImportedAt)) {
+        continue;
       }
+      ids.add(row.matchedRecordId);
     }
     return ids;
-  }, [unifiedReconciliationDetails]);
+  }, [unifiedReconciliationDetails, recordsById, latestEpicImportedAt]);
 
   const epicValidationByRecordId = useMemo(
     () =>
       buildEpicValidationStatusByRecordId(
         unifiedReconciliationDetails,
-        reportImports.length > 0
+        reportImports.length > 0,
+        { recordsById, latestEpicImportedAt }
       ),
-    [unifiedReconciliationDetails, reportImports.length]
+    [unifiedReconciliationDetails, reportImports.length, recordsById, latestEpicImportedAt]
   );
+
+  const epicSnapshotByRecordId = useMemo(
+    () => buildEpicSnapshotByMatchedRecordId(unifiedReconciliationDetails),
+    [unifiedReconciliationDetails]
+  );
+
+  const showEpicSnapshotColumn = reportImports.length > 0;
 
   const progressMetrics = useMemo(
     () =>
@@ -731,10 +766,14 @@ export function EpicConversionPage() {
   const discrepancyCount = unifiedDiscrepancyDetails.length;
   const filteredReconciliationDetails = useMemo(
     () =>
-      unifiedReconciliationDetails.filter((row) =>
-        matchesReconciliationOutcomeFilter(row.outcome, reconciliationOutcomeFilter)
-      ),
-    [unifiedReconciliationDetails, reconciliationOutcomeFilter]
+      unifiedReconciliationDetails.filter((row) => {
+        if (!matchesReconciliationOutcomeFilter(row.outcome, reconciliationOutcomeFilter)) {
+          return false;
+        }
+        const record = row.matchedRecordId ? recordsById.get(row.matchedRecordId) : undefined;
+        return !record || !isConversionPendingEpicAdjudication(record, latestEpicImportedAt);
+      }),
+    [unifiedReconciliationDetails, reconciliationOutcomeFilter, recordsById, latestEpicImportedAt]
   );
 
   useEffect(() => {
@@ -946,17 +985,18 @@ export function EpicConversionPage() {
     );
   }, [filtered, isIclTab]);
 
-  const handleEnrolmentUpload = async (file: File) => {
-    setUploadingEnrolment(true);
+  const handleEnrolmentUpload = async (
+    file: File
+  ): Promise<{ ok: true; message: string } | { ok: false; error: string }> => {
     setUploadError(null);
     setUploadSuccessMessage(null);
     try {
       const buf = await file.arrayBuffer();
       const parsed = parseEpicConversionXlsxBuffer(buf, file.name);
       if (parsed.errors.length) {
-        setUploadError(parsed.errors.slice(0, 4).join('; '));
-        setUploadingEnrolment(false);
-        return;
+        const error = parsed.errors.slice(0, 4).join('; ');
+        setUploadError(error);
+        return { ok: false, error };
       }
 
       const insertOptions = parsed.isVhaSsdb
@@ -973,36 +1013,74 @@ export function EpicConversionPage() {
       const result = await insertRows(parsed.rows, user?.id ?? null, insertOptions);
       if (result.error) {
         setUploadError(result.error);
-      } else {
-        const breakdown = formatStrategyBreakdown(result.strategyBreakdown);
-        const parts: string[] = [];
-        if (result.inserted > 0) {
-          parts.push(
-            `Inserted ${result.inserted} net-new record${result.inserted === 1 ? '' : 's'} (${breakdown}).`
-          );
-        } else if (result.skippedDuplicates > 0) {
-          parts.push(
-            `No net-new records added. Skipped ${result.skippedDuplicates} duplicate${result.skippedDuplicates === 1 ? '' : 's'}.`
-          );
-        } else {
-          parts.push('Upload completed with no rows to insert.');
-        }
-        if (result.autoDischarged > 0) {
-          parts.push(
-            `Marked ${result.autoDischarged} enrollee${result.autoDischarged === 1 ? '' : 's'} absent from this SSDB as discharged from program.`
-          );
-        }
-        if (parsed.skipped > 0) {
-          parts.push(
-            `${parsed.skipped} row${parsed.skipped === 1 ? '' : 's'} skipped during parse.`
-          );
-        }
-        setUploadSuccessMessage(parts.join(' '));
+        return { ok: false, error: result.error };
       }
+
+      const breakdown = formatStrategyBreakdown(result.strategyBreakdown);
+      const parts: string[] = [];
+      if (result.inserted > 0) {
+        parts.push(
+          `Inserted ${result.inserted} net-new record${result.inserted === 1 ? '' : 's'} (${breakdown}).`
+        );
+      } else if (result.skippedDuplicates > 0) {
+        parts.push(
+          `No net-new records added. Skipped ${result.skippedDuplicates} duplicate${result.skippedDuplicates === 1 ? '' : 's'}.`
+        );
+      } else {
+        parts.push('Upload completed with no rows to insert.');
+      }
+      if (result.autoDischarged > 0) {
+        parts.push(
+          `Marked ${result.autoDischarged} enrollee${result.autoDischarged === 1 ? '' : 's'} absent from this SSDB as discharged from program.`
+        );
+      }
+      if (parsed.skipped > 0) {
+        parts.push(
+          `${parsed.skipped} row${parsed.skipped === 1 ? '' : 's'} skipped during parse.`
+        );
+      }
+      const message = parts.join(' ');
+      setUploadSuccessMessage(message);
+      return { ok: true, message };
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Upload failed');
+      const error = err instanceof Error ? err.message : 'Upload failed';
+      setUploadError(error);
+      return { ok: false, error };
     }
+  };
+
+  const openEnrolmentUploadDialog = () => {
+    setEnrolmentDialogOpen(true);
+    setEnrolmentDialogPhase('form');
+    setEnrolmentDialogFile(null);
+    setEnrolmentDialogError(null);
+    setEnrolmentDialogSuccessMessage(null);
+  };
+
+  const closeEnrolmentUploadDialog = () => {
+    setEnrolmentDialogOpen(false);
+    setEnrolmentDialogPhase('form');
+    setEnrolmentDialogFile(null);
+    setEnrolmentDialogError(null);
+    setEnrolmentDialogSuccessMessage(null);
+  };
+
+  const handleEnrolmentDialogSubmit = async () => {
+    if (!enrolmentDialogFile) return;
+    setEnrolmentDialogPhase('processing');
+    setEnrolmentDialogError(null);
+    setUploadingEnrolment(true);
+    const result = await handleEnrolmentUpload(enrolmentDialogFile);
     setUploadingEnrolment(false);
+    if (result.ok) {
+      setEnrolmentDialogSuccessMessage(
+        'Your data has been processed and the data in this app has been refreshed.'
+      );
+      setEnrolmentDialogPhase('success');
+    } else {
+      setEnrolmentDialogError(result.error);
+      setEnrolmentDialogPhase('form');
+    }
   };
 
   const handleEpicReportsUpload = async (file: File) => {
@@ -1220,17 +1298,6 @@ export function EpicConversionPage() {
     <>
     <div className="hc-page hc-page--split">
       <input
-        ref={enrolmentFileRef}
-        type="file"
-        accept=".xlsx,.xls"
-        hidden
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) void handleEnrolmentUpload(f);
-          e.target.value = '';
-        }}
-      />
-      <input
         ref={epicReportsFileRef}
         type="file"
         accept=".xlsx,.xls"
@@ -1400,7 +1467,7 @@ export function EpicConversionPage() {
               className="hc-btn hc-btn-primary hc-import-upload-btn"
               disabled={uploadingEnrolment}
               aria-label={uploadingEnrolment ? 'Uploading enrolment data' : 'Upload enrolment data'}
-              onClick={() => enrolmentFileRef.current?.click()}
+              onClick={openEnrolmentUploadDialog}
             >
               <UploadDataIcon />
             </button>
@@ -1706,6 +1773,16 @@ export function EpicConversionPage() {
         )}
       </>
     )}
+    <EnrolmentUploadDialog
+      open={enrolmentDialogOpen}
+      phase={enrolmentDialogPhase}
+      selectedFile={enrolmentDialogFile}
+      error={enrolmentDialogError}
+      successMessage={enrolmentDialogSuccessMessage}
+      onClose={closeEnrolmentUploadDialog}
+      onFileChange={setEnrolmentDialogFile}
+      onSubmit={() => void handleEnrolmentDialogSubmit()}
+    />
     {statusChangePrompt && (
       <div
         className="hc-modal-backdrop"
@@ -1906,15 +1983,17 @@ export function EpicConversionPage() {
   ) {
     const isCompletion = mode === 'completion';
     const isDischargeSubmitted = mode === 'discharge-submitted';
+    const showEpicColumn = isCompletion && showEpicSnapshotColumn;
     return (
       <div className="hc-table-wrap hc-table-wrap--wide">
         <table
           className={`hc-table hc-table--compact hc-table--epic-compact${
             isDischargeSubmitted ? ' hc-table--epic-compact-discharge-submitted' : ''
-          }`}
+          }${showEpicColumn ? ' hc-table--epic-compact-completion' : ''}`}
         >
           <colgroup>
             <col className="hc-epic-compact-col-primary" />
+            {showEpicColumn && <col className="hc-epic-compact-col-epic" />}
             {isDischargeSubmitted ? (
               <>
                 <col className="hc-epic-compact-col-discharge-details" />
@@ -1925,6 +2004,16 @@ export function EpicConversionPage() {
             )}
             <col className="hc-epic-compact-col-undo" />
           </colgroup>
+          {isCompletion && (
+            <thead>
+              <tr>
+                <th scope="col">VHA SSDB Data</th>
+                {showEpicColumn && <th scope="col">Epic Episode Data</th>}
+                <th scope="col">Conversion Status</th>
+                <th scope="col" aria-label="Actions" />
+              </tr>
+            </thead>
+          )}
           <tbody>
             {groupRecords.map((r) => (
               <tr key={r.id}>
@@ -1950,6 +2039,30 @@ export function EpicConversionPage() {
                     {highlightMatch(r.ic_lead, search)}
                   </div>
                 </td>
+                {showEpicColumn && (
+                  <td className="hc-epic-compact-epic">
+                    {(() => {
+                      const validation = epicValidationByRecordId.get(r.id);
+                      const epicSnapshot = epicSnapshotByRecordId.get(r.id);
+                      if (validation?.status !== 'discrepancy' || !epicSnapshot) return null;
+                      const icLead = epicSnapshot.icLead ?? '—';
+                      return (
+                        <>
+                          <div className="hc-epic-compact-line1">
+                            <span className="hc-epic-compact-mrn">
+                              MRN {highlightMatch(epicSnapshot.mrn, search)}
+                            </span>
+                          </div>
+                          <div className="hc-epic-compact-line2">
+                            {highlightMatch(epicSnapshot.pathwayDisplay, search)}
+                            {' | '}
+                            {highlightMatch(icLead, search)}
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </td>
+                )}
                 {isDischargeSubmitted ? (
                   <>
                     <td className="hc-epic-compact-discharge-details">
@@ -2011,7 +2124,9 @@ export function EpicConversionPage() {
                       >
                         ✓
                       </span>
-                    ) : (
+                    ) : isCompletion &&
+                      getRecordValidationKind(r.id, epicValidationByRecordId) !==
+                        'pending' ? null : (
                       <button
                         type="button"
                         className="hc-epic-compact-undo"

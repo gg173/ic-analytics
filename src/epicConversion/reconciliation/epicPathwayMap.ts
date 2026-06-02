@@ -11,6 +11,7 @@ export const EPIC_EPISODE_TO_VHA_PATHWAY: Readonly<Record<string, string>> = {
   'UHN at Home - Orthopedics': 'UHN-ORTHO',
   'UHN at Home - Cardiology': 'UHN-CRD',
   'UHN at Home - Breast': 'UHN-BRT',
+  'UHN at Home - Transition': 'UHN-TRANSITION',
 };
 
 export function mapEpicEpisodeToVhaPathway(episode: string | null | undefined): string | null {
