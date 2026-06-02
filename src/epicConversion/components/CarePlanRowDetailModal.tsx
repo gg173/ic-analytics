@@ -102,8 +102,12 @@ export function CarePlanRowDetailModal({ row, mrn, onClose }: CarePlanRowDetailM
           <DetailTextField label="Client needs / goals">
             {renderClientNeedsGoalsContent(row.clientNeedsGoals, row.clientNeedsKind)}
           </DetailTextField>
-          <DetailTextField label="Service / teaching plan" value={row.serviceTeachingPlan} />
-          <DetailTextField label="Outcomes" value={row.outcomes} />
+          <DetailTextField label="Service / teaching plan">
+            {row.serviceTeachingPlan?.trim() ? row.serviceTeachingPlan : '—'}
+          </DetailTextField>
+          <DetailTextField label="Outcomes">
+            {row.outcomes?.trim() ? row.outcomes : '—'}
+          </DetailTextField>
         </dl>
       </div>
     </div>
