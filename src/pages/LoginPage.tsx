@@ -53,8 +53,7 @@ export function LoginPage() {
           <img src={APP_LOGO_SRC} alt="UHN at Home" className="hc-login-logo" />
         </div>
         <p className="hc-muted">
-          Sign in with your organization email account to access the UHN@Home Digital Program
-          Workspace
+          Sign in with your organization email account to access the UHN@Home Digital Workspace
         </p>
 
         <form onSubmit={handleSubmit} className="hc-form">
@@ -67,6 +66,7 @@ export function LoginPage() {
               required
               autoComplete="email"
             />
+            <span className="hc-form-hint">Use your UHN or VHA email address</span>
           </label>
           <label>
             Password
@@ -77,6 +77,7 @@ export function LoginPage() {
               required
               autoComplete="current-password"
             />
+            <span className="hc-form-hint">Reach out to Gary/Dyo if you forgot the app password</span>
           </label>
 
           {error && <p className="hc-form-error">{error}</p>}

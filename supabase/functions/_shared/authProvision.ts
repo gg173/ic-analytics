@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient, type User } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 
 export function getAppPassword(): string {
-  return Deno.env.get('APP_PASSWORD') ?? 'test123';
+  return Deno.env.get('APP_PASSWORD') ?? 'Epicpt5814';
 }
 
 export function createServiceClient(): SupabaseClient {

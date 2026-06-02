@@ -2846,6 +2846,10 @@ select.hc-cell-input {
   color: rgba(255, 255, 255, 0.92);
 }
 
+.hc-shell--gradient .hc-login-panel .hc-form-hint {
+  color: rgba(255, 255, 255, 0.5);
+}
+
 .hc-shell--gradient .hc-login-panel .hc-form input {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.2);
@@ -2896,6 +2900,13 @@ select.hc-cell-input {
   gap: 0.3rem;
   font-size: 0.85rem;
   font-weight: 500;
+}
+
+.hc-form-hint {
+  color: #94a3b8;
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.35;
 }
 
 .hc-form input,
@@ -3989,6 +4000,12 @@ select.hc-cell-input {
   max-height: none;
 }
 
+.hc-modal--upload-processing {
+  width: min(28rem, 100%);
+  max-height: none;
+  padding: 0;
+}
+
 .hc-modal--enrolment-upload {
   width: 90vw;
   max-width: 90vw;
@@ -4188,12 +4205,98 @@ select.hc-cell-input {
 .hc-user-mgmt-add input,
 .hc-user-mgmt-add select {
   min-width: 12rem;
+  color: #0f172a;
+}
+
+.hc-user-mgmt-add input::placeholder {
+  color: #94a3b8;
+}
+
+.hc-user-mgmt-add select.hc-select--placeholder {
+  color: #94a3b8;
+}
+
+.hc-user-mgmt-add select.hc-select--placeholder option:not([value='']) {
+  color: #0f172a;
+}
+
+.hc-user-mgmt-table-section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.hc-user-mgmt-table-section .hc-filter-bar .hc-user-mgmt-search {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-right: 0.25rem;
+}
+
+.hc-user-mgmt-table-section .hc-filter-bar .hc-user-mgmt-search input {
+  width: 11rem;
+  height: 28px;
+  padding: 0 0.65rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.hc-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.hc-user-mgmt-table-section .hc-filter-bar {
+  margin-bottom: 0;
 }
 
 .hc-user-mgmt-table-wrap {
   flex: 1;
   min-height: 0;
   overflow: auto;
+}
+
+.hc-user-mgmt-table {
+  font-size: 0.75rem;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.hc-user-mgmt-table th,
+.hc-user-mgmt-table td {
+  padding: 0.3rem 0.45rem;
+  text-align: center;
+  vertical-align: middle;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.hc-user-mgmt-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #475569;
+  background: #f8fafc;
+  box-shadow: 0 1px 0 #e2e8f0;
+}
+
+.hc-user-mgmt-table .hc-table-sort {
+  justify-content: center;
+  width: 100%;
+  text-align: center;
 }
 
 .hc-user-mgmt-role-select {
@@ -4206,9 +4309,24 @@ select.hc-cell-input {
   background: #fff;
 }
 
+.hc-user-mgmt-table .hc-user-mgmt-role-select {
+  min-width: 8.5rem;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.75rem;
+}
+
 .hc-user-mgmt-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
   justify-content: flex-end;
+}
+
+.hc-user-mgmt-table .hc-user-mgmt-actions {
+  justify-content: center;
+}
+
+.hc-user-mgmt-table .hc-user-mgmt-actions .hc-btn {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
 }

@@ -7,6 +7,10 @@ import {
   EnrolmentUploadDialog,
   type EnrolmentUploadDialogPhase,
 } from '../epicConversion/components/EnrolmentUploadDialog';
+import {
+  UploadProcessingOverlay,
+  type UploadProcessingOverlayPhase,
+} from '../epicConversion/components/UploadProcessingOverlay';
 import { ProgressTracker } from '../epicConversion/components/ProgressTracker';
 import {
   buildEpicSnapshotByMatchedRecordId,
@@ -461,10 +465,12 @@ export function EpicConversionPage() {
     string | null
   >(null);
   const [uploadingEpicReport, setUploadingEpicReport] = useState(false);
+  const [epicReportOverlayOpen, setEpicReportOverlayOpen] = useState(false);
+  const [epicReportOverlayPhase, setEpicReportOverlayPhase] =
+    useState<UploadProcessingOverlayPhase>('processing');
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccessMessage, setUploadSuccessMessage] = useState<string | null>(null);
   const [epicReportError, setEpicReportError] = useState<string | null>(null);
-  const [epicReportSuccessMessage, setEpicReportSuccessMessage] = useState<string | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -1083,26 +1089,26 @@ export function EpicConversionPage() {
     }
   };
 
+  const closeEpicReportUploadOverlay = () => {
+    setEpicReportOverlayOpen(false);
+    setEpicReportOverlayPhase('processing');
+  };
+
   const handleEpicReportsUpload = async (file: File) => {
+    setEpicReportOverlayOpen(true);
+    setEpicReportOverlayPhase('processing');
     setUploadingEpicReport(true);
     setEpicReportError(null);
-    setEpicReportSuccessMessage(null);
     const result = await uploadReport(file, user?.id ?? null);
+    setUploadingEpicReport(false);
     if (result.error) {
       setEpicReportError(result.error);
+      closeEpicReportUploadOverlay();
     } else if (result.summary) {
-      const resolvedPart =
-        result.resolvedUnmatchedCount > 0
-          ? ` ${result.resolvedUnmatchedCount} previously unmatched case${result.resolvedUnmatchedCount === 1 ? '' : 's'} resolved (removed from Epic).`
-          : '';
-      setEpicReportSuccessMessage(
-        `Uploaded ${result.rowCount} row${result.rowCount === 1 ? '' : 's'}. ` +
-          `${result.summary.validated} validated, ${result.summary.statusDiscrepancy} status discrepancies, ` +
-          `${result.summary.fieldDiscrepancy} field discrepancies, ${result.summary.unmatched} unmatched.` +
-          resolvedPart
-      );
+      setEpicReportOverlayPhase('success');
+    } else {
+      closeEpicReportUploadOverlay();
     }
-    setUploadingEpicReport(false);
   };
 
   const handleDeleteReportImport = async (importId: string, filename: string) => {
@@ -1565,7 +1571,6 @@ export function EpicConversionPage() {
           </div>
           {epicReportError && <p className="hc-form-error">{epicReportError}</p>}
           {reportError && <p className="hc-form-error">{reportError}</p>}
-          {epicReportSuccessMessage && <p className="hc-info">{epicReportSuccessMessage}</p>}
           <div className="hc-import-column-body">
             <div className="hc-table-wrap hc-import-table-wrap">
               <table className="hc-table hc-table--grid hc-table--import">
@@ -1787,6 +1792,12 @@ export function EpicConversionPage() {
       onClose={closeEnrolmentUploadDialog}
       onFileChange={setEnrolmentDialogFile}
       onSubmit={() => void handleEnrolmentDialogSubmit()}
+    />
+    <UploadProcessingOverlay
+      open={epicReportOverlayOpen}
+      phase={epicReportOverlayPhase}
+      ariaLabel="Upload Epic conversion report"
+      onClose={closeEpicReportUploadOverlay}
     />
     {statusChangePrompt && (
       <div
