@@ -5,6 +5,7 @@ import { parseEpicConversionReportBuffer } from '../ingest/parseEpicConversionRe
 import { mergeEpicReportRowsByMrn } from '../reconciliation/mergeEpicReportRows';
 import {
   buildReconciliationDetails,
+  countUnmatchedResolvedByLatestEpicUpload,
   findConvertedRecordsMissingFromEpic,
   getLatestEpicImportedAt,
   isDiscrepancyOutcome,
@@ -30,6 +31,8 @@ export interface EpicReportUploadResult {
   importId: string | null;
   rowCount: number;
   summary: ReconciliationSummary | null;
+  /** Previously unmatched rows no longer in the uploaded Epic report. */
+  resolvedUnmatchedCount: number;
 }
 
 function summarizeOutcomes(
@@ -176,6 +179,10 @@ export function useEpicConversionReports(vhaRecords: EpicConversionRecord[]) {
 
   const uploadReport = useCallback(
     async (file: File, importedBy?: string | null): Promise<EpicReportUploadResult> => {
+      const previousUnmatchedRows = unifiedReconciliationDetails.filter(
+        (row) => row.outcome === 'unmatched'
+      );
+
       try {
         const buf = await file.arrayBuffer();
         const parsed = parseEpicConversionReportBuffer(buf);
@@ -185,6 +192,7 @@ export function useEpicConversionReports(vhaRecords: EpicConversionRecord[]) {
             importId: null,
             rowCount: 0,
             summary: null,
+            resolvedUnmatchedCount: 0,
           };
         }
 
@@ -206,6 +214,7 @@ export function useEpicConversionReports(vhaRecords: EpicConversionRecord[]) {
             importId: null,
             rowCount: 0,
             summary: null,
+            resolvedUnmatchedCount: 0,
           };
         }
 
@@ -231,7 +240,13 @@ export function useEpicConversionReports(vhaRecords: EpicConversionRecord[]) {
 
           if (rowError) {
             await supabase.from('epic_conversion_report_imports').delete().eq('id', importId);
-            return { error: rowError.message, importId: null, rowCount: 0, summary: null };
+            return {
+              error: rowError.message,
+              importId: null,
+              rowCount: 0,
+              summary: null,
+              resolvedUnmatchedCount: 0,
+            };
           }
           insertedRows.push(...((rowData as EpicConversionReportRow[]) ?? []));
         }
@@ -253,7 +268,13 @@ export function useEpicConversionReports(vhaRecords: EpicConversionRecord[]) {
 
           if (reconcileError) {
             await supabase.from('epic_conversion_report_imports').delete().eq('id', importId);
-            return { error: reconcileError.message, importId: null, rowCount: 0, summary: null };
+            return {
+              error: reconcileError.message,
+              importId: null,
+              rowCount: 0,
+              summary: null,
+              resolvedUnmatchedCount: 0,
+            };
           }
         }
 
@@ -278,17 +299,30 @@ export function useEpicConversionReports(vhaRecords: EpicConversionRecord[]) {
         );
         setDetailsImportId(importId);
         await loadUnifiedReconciliationDetails();
-        return { error: null, importId, rowCount: parsed.rows.length, summary };
+
+        const resolvedUnmatchedCount = countUnmatchedResolvedByLatestEpicUpload(
+          previousUnmatchedRows,
+          insertedRows
+        );
+
+        return {
+          error: null,
+          importId,
+          rowCount: parsed.rows.length,
+          summary,
+          resolvedUnmatchedCount,
+        };
       } catch (err) {
         return {
           error: err instanceof Error ? err.message : 'Upload failed',
           importId: null,
           rowCount: 0,
           summary: null,
+          resolvedUnmatchedCount: 0,
         };
       }
     },
-    [vhaRecords, refresh, loadUnifiedReconciliationDetails]
+    [vhaRecords, refresh, loadUnifiedReconciliationDetails, unifiedReconciliationDetails]
   );
 
   const loadReconciliationDetails = useCallback(

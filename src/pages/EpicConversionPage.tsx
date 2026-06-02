@@ -1091,10 +1091,15 @@ export function EpicConversionPage() {
     if (result.error) {
       setEpicReportError(result.error);
     } else if (result.summary) {
+      const resolvedPart =
+        result.resolvedUnmatchedCount > 0
+          ? ` ${result.resolvedUnmatchedCount} previously unmatched case${result.resolvedUnmatchedCount === 1 ? '' : 's'} resolved (removed from Epic).`
+          : '';
       setEpicReportSuccessMessage(
         `Uploaded ${result.rowCount} row${result.rowCount === 1 ? '' : 's'}. ` +
           `${result.summary.validated} validated, ${result.summary.statusDiscrepancy} status discrepancies, ` +
-          `${result.summary.fieldDiscrepancy} field discrepancies, ${result.summary.unmatched} unmatched.`
+          `${result.summary.fieldDiscrepancy} field discrepancies, ${result.summary.unmatched} unmatched.` +
+          resolvedPart
       );
     }
     setUploadingEpicReport(false);

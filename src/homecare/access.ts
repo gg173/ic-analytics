@@ -8,6 +8,8 @@ export interface UserAccess {
   isSpo: boolean;
   /** UHN billing rules / push destinations admin (UHN Admin or App Admin). */
   canManageHomecareRules: boolean;
+  /** Epic ↔ VHA SSDB ICL name mappings (App Admin, UHN Admin, or VHA Admin). */
+  canManageEpicIclMaps: boolean;
   isUhnAdmin: boolean;
   canEdit: boolean;
   canAccessHomecare: boolean;
@@ -36,6 +38,8 @@ export function resolveUserAccess(
   const isUhn = isAppAdmin || slug === 'uhn';
   const isSpo = slug === 'spo' && !isAppAdmin;
   const canManageHomecareRules = isAppAdmin || role === 'uhn_admin';
+  const canManageEpicIclMaps =
+    isAppAdmin || role === 'uhn_admin' || role === 'vha_admin';
   const isUhnAdmin = canManageHomecareRules;
   const canEdit =
     isAppAdmin || (slug === 'uhn' && (role === 'uhn_editor' || role === 'uhn_admin'));
@@ -50,6 +54,7 @@ export function resolveUserAccess(
     isUhn,
     isSpo,
     canManageHomecareRules,
+    canManageEpicIclMaps,
     isUhnAdmin,
     canEdit,
     canAccessHomecare,
@@ -94,6 +99,9 @@ export function hasAnyModuleAccess(access: UserAccess): boolean {
 function pathAllowed(path: string, access: UserAccess): boolean {
   if (path.startsWith('/analytics')) return access.canAccessAnalytics;
   if (path.startsWith('/homecare')) return access.canAccessHomecare;
-  if (path.startsWith('/epic-conversion')) return access.canAccessEpic;
+  if (path.startsWith('/epic-conversion')) {
+    if (path.startsWith('/epic-conversion/admin')) return access.canManageEpicIclMaps;
+    return access.canAccessEpic;
+  }
   return false;
 }

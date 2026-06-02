@@ -183,6 +183,24 @@ export function getLatestEpicImportedAt(importedAts: Iterable<string>): string |
   return latest;
 }
 
+/** Unmatched Epic rows cleared because the patient no longer appears in the latest report. */
+export function countUnmatchedResolvedByLatestEpicUpload(
+  previousUnmatchedRows: ReconciliationDetailRow[],
+  latestEpicSnapshot: EpicConversionReportRow[]
+): number {
+  const mrnsInLatestReport = new Set<string>();
+  for (const row of latestEpicSnapshot) {
+    const key = normalizeMrnForMatch(row.mrn);
+    if (key) mrnsInLatestReport.add(key);
+  }
+
+  return previousUnmatchedRows.filter((row) => {
+    if (row.outcome !== 'unmatched') return false;
+    const key = normalizeMrnForMatch(row.mrn);
+    return !!key && !mrnsInLatestReport.has(key);
+  }).length;
+}
+
 export function isDiscrepancyOutcome(outcome: ReconciliationOutcome): boolean {
   return outcome !== 'validated' && outcome !== 'perfect';
 }

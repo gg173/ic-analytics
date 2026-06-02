@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import './index.css';
 import AnalyticsPage from './pages/AnalyticsPage';
 import { AuthProvider } from './homecare/hooks/useAuth';
@@ -12,6 +12,8 @@ import { HomecareBatchesPage } from './pages/HomecareBatchesPage';
 import { HomecareWorkstationPage } from './pages/HomecareWorkstationPage';
 import { HomecareAdminPage } from './pages/HomecareAdminPage';
 import { EpicConversionPage } from './pages/EpicConversionPage';
+import { EpicConversionAdminPage } from './pages/EpicConversionAdminPage';
+import { EpicConversionMapsProvider } from './epicConversion/context/EpicConversionMapsProvider';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -39,7 +41,16 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/epic-conversion" element={<HomecareLayout />}>
             <Route element={<ProtectedHomecareRoute />}>
               <Route element={<ProtectedModuleRoute module="epic" />}>
-                <Route index element={<EpicConversionPage />} />
+                <Route
+                  element={
+                    <EpicConversionMapsProvider>
+                      <Outlet />
+                    </EpicConversionMapsProvider>
+                  }
+                >
+                  <Route index element={<EpicConversionPage />} />
+                  <Route path="admin" element={<EpicConversionAdminPage />} />
+                </Route>
               </Route>
             </Route>
           </Route>

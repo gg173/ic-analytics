@@ -29,7 +29,15 @@ function formatHeaderTime(date: Date): string {
 }
 
 export function HeaderUserPanel() {
-  const { user, organization, signOut, canManageHomecareRules, isAppAdmin } = useAuth();
+  const {
+    user,
+    organization,
+    signOut,
+    canManageHomecareRules,
+    canManageEpicIclMaps,
+    canAccessHomecare,
+    isAppAdmin,
+  } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMgmtOpen, setUserMgmtOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
@@ -89,14 +97,24 @@ export function HeaderUserPanel() {
           </button>
           {menuOpen && (
             <div className="hc-header-user-menu" role="menu">
-              {canManageHomecareRules && (
+              {canManageEpicIclMaps && (
+                <Link
+                  to="/epic-conversion/admin"
+                  className="hc-header-user-menu-item"
+                  role="menuitem"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  Epic mappings
+                </Link>
+              )}
+              {canManageHomecareRules && canAccessHomecare && (
                 <Link
                   to="/homecare/admin"
                   className="hc-header-user-menu-item"
                   role="menuitem"
                   onClick={() => setMenuOpen(false)}
                 >
-                  Admin
+                  Billing rules
                 </Link>
               )}
               {isAppAdmin && (

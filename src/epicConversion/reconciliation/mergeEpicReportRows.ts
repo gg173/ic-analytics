@@ -1,4 +1,4 @@
-import { normalizeMrnForMatch } from './reconcileReportRows';
+import { getLatestEpicImportedAt, normalizeMrnForMatch } from './reconcileReportRows';
 import type { EpicConversionReportRow } from './types';
 
 export type EpicReportRowWithImportMeta = EpicConversionReportRow & {
@@ -6,18 +6,21 @@ export type EpicReportRowWithImportMeta = EpicConversionReportRow & {
 };
 
 /**
- * Builds one Epic snapshot across all uploads: for each MRN, the row from the
- * most recently imported report wins (same cumulative pattern as SSDB enrolment).
+ * Builds the Epic reconciliation snapshot from the most recent report upload.
+ * Each Epic file is a full report rerun; MRNs absent from that file are treated
+ * as removed from Epic (e.g. after deleting an episode and re-exporting).
  */
 export function mergeEpicReportRowsByMrn(
   rows: EpicReportRowWithImportMeta[]
 ): EpicConversionReportRow[] {
-  const sorted = [...rows].sort((a, b) => {
-    const byImport =
-      new Date(b.importedAt).getTime() - new Date(a.importedAt).getTime();
-    if (byImport !== 0) return byImport;
-    return b.row_index - a.row_index;
-  });
+  if (!rows.length) return [];
+
+  const latestImportedAt = getLatestEpicImportedAt(rows.map((row) => row.importedAt));
+  if (!latestImportedAt) return [];
+
+  const sorted = [...rows]
+    .filter((row) => row.importedAt === latestImportedAt)
+    .sort((a, b) => b.row_index - a.row_index);
 
   const byMrn = new Map<string, EpicConversionReportRow>();
   for (const row of sorted) {

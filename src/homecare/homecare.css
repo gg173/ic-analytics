@@ -2934,6 +2934,29 @@ select.hc-cell-input {
   border-radius: 6px;
 }
 
+.hc-add-row--mapping {
+  align-items: center;
+}
+
+.hc-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.hc-table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+
+.hc-admin-messages {
+  margin-bottom: 0.75rem;
+}
+
 .hc-toolbar {
   display: flex;
   flex-wrap: nowrap;
