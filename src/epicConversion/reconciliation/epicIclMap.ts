@@ -1,4 +1,4 @@
-/** Epic "ICL/HCS Assigned" labels → VHA SSDB ic_lead strings. */
+/** Epic case team column labels ("Patient's Case Team Members", legacy "ICL/HCS Assigned") → VHA SSDB ic_lead strings. */
 export const EPIC_ICL_TO_VHA_ICL: Readonly<Record<string, string>> = {
   'MANALO, HERSHEY': 'MANALO (UHN), HERSHEY (#17725)',
   'LOCQUIAO, JHIFFEE': 'LOCQUIAO (UHN), JHIFFEE (#15522)',

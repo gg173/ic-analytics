@@ -67,6 +67,9 @@ function mapReportRow(row: Record<string, unknown>, rowIndex: number): EpicRepor
   );
   const icLead = str(
     pick(row, [
+      "Patient's Case Team Members",
+      'Patients Case Team Members',
+      'Patient Case Team Members',
       'ICL/HCS Assigned',
       'ICL / HCS Assigned',
       'ICL HCS Assigned',

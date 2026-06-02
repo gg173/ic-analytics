@@ -2,14 +2,16 @@ import * as XLSX from 'xlsx';
 import { downloadWorkbook } from '../../export/excelExport';
 import type { EpicConversionReportRow } from '../reconciliation/types';
 
-const EPIC_REPORT_HEADERS = ['Patient', 'MRN', 'Episode', 'ICL/HCS Assigned'] as const;
+const EPIC_CASE_TEAM_COLUMN = "Patient's Case Team Members";
+
+const EPIC_REPORT_HEADERS = ['Patient', 'MRN', 'Episode', EPIC_CASE_TEAM_COLUMN] as const;
 
 function reportRowToSheetRow(r: EpicConversionReportRow): Record<string, string | null> {
   return {
     Patient: r.patient_name,
     MRN: r.mrn,
     Episode: r.epic_episode ?? r.pathway,
-    'ICL/HCS Assigned': r.ic_lead,
+    [EPIC_CASE_TEAM_COLUMN]: r.ic_lead,
   };
 }
 
