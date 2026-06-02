@@ -30,9 +30,24 @@ function todayIso(): string {
   return `${year}-${month}-${day}`;
 }
 
+/** Top offset (%) for a tick value on the linear 0–yMax plot scale. */
+function yTickTopPercent(tick: number, yMax: number): number {
+  if (yMax <= 0) return tick <= 0 ? 100 : 0;
+  return ((yMax - tick) / yMax) * 100;
+}
+
+function yTickTransform(tick: number, yMax: number): string {
+  if (yMax <= 0) return 'translateY(-50%)';
+  if (tick >= yMax) return 'translateY(0)';
+  if (tick <= 0) return 'translateY(-100%)';
+  return 'translateY(-50%)';
+}
+
 export function DailyProgressChart({ series }: DailyProgressChartProps) {
   const maxTotal = useMemo(() => maxDailyTotal(series), [series]);
   const ticks = useMemo(() => yAxisTicks(maxTotal), [maxTotal]);
+  const plotRowCount = Math.max(ticks.length - 1, 1);
+  const plotRowTemplate = `repeat(${plotRowCount}, 1fr)`;
   const yMax = ticks[0] ?? maxTotal;
   const today = todayIso();
 
@@ -56,7 +71,14 @@ export function DailyProgressChart({ series }: DailyProgressChartProps) {
           </div>
           <div className="hc-daily-chart-y-axis" aria-hidden>
             {ticks.map((tick) => (
-              <span key={tick} className="hc-daily-chart-y-tick">
+              <span
+                key={tick}
+                className="hc-daily-chart-y-tick"
+                style={{
+                  top: `${yTickTopPercent(tick, yMax)}%`,
+                  transform: yTickTransform(tick, yMax),
+                }}
+              >
                 {tick}
               </span>
             ))}
@@ -73,7 +95,7 @@ export function DailyProgressChart({ series }: DailyProgressChartProps) {
               <div className="hc-daily-chart-plot-area">
                 <div
                   className="hc-daily-chart-grid"
-                  style={{ gridTemplateRows: `repeat(${Math.max(ticks.length - 1, 1)}, 1fr)` }}
+                  style={{ gridTemplateRows: plotRowTemplate }}
                   aria-hidden
                 >
                   {ticks.slice(0, -1).map((tick) => (
@@ -102,15 +124,18 @@ export function DailyProgressChart({ series }: DailyProgressChartProps) {
                     <div
                       className={`hc-daily-chart-column${isToday ? ' hc-daily-chart-column--today' : ''}`}
                     >
-                      <div
-                        className="hc-daily-chart-bar-group"
-                        style={{ height: `${barHeightPct}%` }}
-                      >
+                      <div className="hc-daily-chart-bar-group">
                         {day.total > 0 ? (
-                          <span className="hc-daily-chart-bar-total">{day.total}</span>
+                          <span
+                            className="hc-daily-chart-bar-total"
+                            style={{ bottom: `calc(${barHeightPct}% + 0.15rem)` }}
+                          >
+                            {day.total}
+                          </span>
                         ) : null}
                         <div
                           className="hc-daily-chart-bar-stack"
+                          style={{ height: `${barHeightPct}%` }}
                           title={`${formatChartAxisDay(day.date)} — ${day.total} records${
                             tooltipParts.length ? `\n${tooltipParts.join('\n')}` : ''
                           }`}

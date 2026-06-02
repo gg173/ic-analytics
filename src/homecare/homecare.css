@@ -213,9 +213,26 @@
   color: #ffffff;
 }
 
+.hc-header-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
 .hc-logo {
   height: 36px;
   width: auto;
+  flex-shrink: 0;
+}
+
+.hc-app-version {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.62);
+  white-space: nowrap;
+  user-select: all;
 }
 
 .hc-nav {
@@ -1101,7 +1118,7 @@ button.hc-epic-split-panel-count--active {
   background: transparent;
   border: none;
   gap: 1rem;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .hc-progress-section {
@@ -1109,9 +1126,17 @@ button.hc-epic-split-panel-count--active {
   min-width: 0;
 }
 
-.hc-progress-tracker .hc-epic-split-panel {
+.hc-progress-tracker .hc-progress-card.hc-panel,
+.hc-progress-tracker .hc-progress-go-live-card {
   height: auto;
-  flex: 0 0 auto;
+}
+
+.hc-progress-tracker .hc-progress-tracker-overall.hc-epic-split-panel,
+.hc-progress-tracker .hc-progress-section--import-activity.hc-epic-split-panel {
+  height: 100%;
+  min-height: 0;
+  align-self: stretch;
+  overflow: hidden;
 }
 
 .hc-progress-section-body {
@@ -1121,11 +1146,89 @@ button.hc-epic-split-panel-count--active {
 }
 
 .hc-progress-section--overall .hc-progress-section-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   padding: 0.5rem 1rem 0.875rem;
 }
 
+.hc-progress-section--overall .hc-daily-chart {
+  --hc-daily-chart-x-label-band: 1.65rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .hc-progress-section--overall .hc-daily-chart-body {
-  min-height: calc(200px + 1.75rem);
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: stretch;
+  gap: 0.125rem;
+}
+
+.hc-progress-section--overall .hc-daily-chart-y-side {
+  align-self: start;
+  height: calc(100% - var(--hc-daily-chart-x-label-band));
+  max-height: calc(100% - var(--hc-daily-chart-x-label-band));
+}
+
+.hc-progress-section--overall .hc-daily-chart-y-title-wrap,
+.hc-progress-section--overall .hc-daily-chart-y-axis {
+  padding-bottom: 0;
+}
+
+.hc-progress-section--overall .hc-daily-chart-y-axis {
+  height: 100%;
+}
+
+.hc-progress-section--overall .hc-daily-chart-x-label {
+  flex: 0 0 var(--hc-daily-chart-x-label-band);
+  height: var(--hc-daily-chart-x-label-band);
+  box-sizing: border-box;
+}
+
+.hc-progress-section--overall .hc-daily-chart-y-axis-line {
+  bottom: var(--hc-daily-chart-x-label-band);
+}
+
+.hc-progress-section--overall .hc-daily-chart-plot-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.hc-progress-section--overall .hc-daily-chart-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}
+
+.hc-progress-section--overall .hc-daily-chart-plot-inner {
+  position: relative;
+  height: 100%;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+/* Overlay grid + x-axis on the bar plot only (exclude date labels below). */
+.hc-progress-section--overall .hc-daily-chart-plot-area {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: var(--hc-daily-chart-x-label-band);
+  height: auto;
+  align-self: auto;
+}
+
+.hc-progress-section--overall .hc-daily-chart-day {
+  height: 100%;
+}
+
+.hc-progress-section--overall .hc-daily-chart-column {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
 }
 
 .hc-progress-section-body .hc-progress-reconcile-meta {
@@ -1146,8 +1249,12 @@ button.hc-epic-split-panel-count--active {
 .hc-progress-tracker-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 1rem;
+  flex: 1 1 auto;
+  min-height: 0;
   min-width: 0;
+  align-items: stretch;
 }
 
 .hc-progress-tracker-grid--with-go-live {
@@ -1173,12 +1280,6 @@ button.hc-epic-split-panel-count--active {
 .hc-progress-tracker-grid .hc-progress-tracker-overall,
 .hc-progress-tracker-grid .hc-progress-tracker-import {
   min-height: 0;
-}
-
-.hc-progress-tracker .hc-progress-section--import-activity.hc-epic-split-panel {
-  height: 100%;
-  align-self: stretch;
-  overflow: hidden;
 }
 
 .hc-progress-section--import-activity .hc-table-wrap {
@@ -1261,11 +1362,13 @@ button.hc-epic-split-panel-count--active {
   .hc-progress-tracker-grid,
   .hc-progress-tracker-grid--with-go-live {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
   }
 
   .hc-progress-tracker-grid .hc-progress-tracker-overall,
   .hc-progress-tracker-grid .hc-progress-tracker-import {
     grid-column: auto;
+    min-height: 280px;
   }
 }
 
@@ -1447,24 +1550,30 @@ button.hc-epic-split-panel-count--active {
 .hc-daily-chart-body {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 0.5rem;
+  gap: 0.125rem;
   min-height: 0;
   overflow: visible;
 }
 
 .hc-daily-chart-y-axis {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  align-items: flex-end;
-  flex: 0 0 2rem;
-  padding-bottom: 1.25rem;
+  position: relative;
+  flex: 1 1 auto;
+  align-self: stretch;
+  width: max-content;
+  min-width: 1.75rem;
+  height: 200px;
+  min-height: 0;
+  box-sizing: border-box;
 }
 
 .hc-daily-chart-y-tick {
+  position: absolute;
+  right: 0;
   font-size: 0.6875rem;
   color: #64748b;
   line-height: 1;
+  white-space: nowrap;
+  text-align: right;
 }
 
 .hc-daily-chart-plot-wrap {
@@ -1596,26 +1705,31 @@ button.hc-epic-split-panel-count--active {
 }
 
 .hc-daily-chart-bar-group {
+  position: relative;
   width: 100%;
   max-width: 28px;
+  height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: flex-end;
 }
 
 .hc-daily-chart-bar-total {
-  flex: 0 0 auto;
-  margin-bottom: 0.15rem;
+  position: absolute;
+  left: 50%;
+  transform: translate(-50%, -100%);
   font-size: 0.5625rem;
   font-weight: 600;
   line-height: 1;
   color: #475569;
   white-space: nowrap;
+  pointer-events: none;
 }
 
 .hc-daily-chart-bar-stack {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   width: 100%;
   min-height: 0;
   display: flex;

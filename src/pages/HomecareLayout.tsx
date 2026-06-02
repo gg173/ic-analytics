@@ -1,6 +1,7 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { HeaderUserPanel } from '../homecare/components/HeaderUserPanel';
 import { useAuth } from '../homecare/hooks/useAuth';
+import { APP_VERSION_CODE, APP_VERSION_LABEL } from '../lib/appVersion';
 import { isSupabaseConfigured, supabaseKeyError, supabaseSetupHint } from '../lib/supabase';
 import '../homecare/homecare.css';
 
@@ -49,7 +50,12 @@ export function HomecareLayout() {
     <div className="hc-shell">
       <header className="hc-header">
         <div className="hc-header-top">
-          <img src={APP_LOGO_SRC} alt="UHN at Home" className="hc-logo" />
+          <div className="hc-header-brand">
+            <img src={APP_LOGO_SRC} alt="UHN at Home" className="hc-logo" />
+            <span className="hc-app-version" title={APP_VERSION_CODE}>
+              {APP_VERSION_LABEL}
+            </span>
+          </div>
           <HeaderUserPanel />
         </div>
         <div className="hc-header-bottom">
