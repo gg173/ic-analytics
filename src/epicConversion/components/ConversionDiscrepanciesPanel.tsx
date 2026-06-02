@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { iclNamesMatch } from '../reconciliation/epicIclMatch';
+import { epicPathwayMatchesVha } from '../reconciliation/epicPathwayMap';
 import {
   formatMissingFromEpicResultSummary,
   normalizeMrnForMatch,
@@ -12,21 +13,16 @@ import {
   type ReconciliationSummary,
 } from '../reconciliation/types';
 
-function normalizePathway(value: string | null | undefined): string {
-  return (value ?? '').trim().toUpperCase();
-}
-
 function mrnMatches(epicMrn: string, vhaMrn: string | null | undefined): boolean {
   if (!vhaMrn?.trim()) return false;
   return normalizeMrnForMatch(epicMrn) === normalizeMrnForMatch(vhaMrn);
 }
 
-function pathwayMatches(
-  epicPathway: string | null | undefined,
-  vhaPathway: string | null | undefined
-): boolean {
-  if (!epicPathway?.trim() || !vhaPathway?.trim()) return false;
-  return normalizePathway(epicPathway) === normalizePathway(vhaPathway);
+function pathwayMatches(row: ReconciliationDetailRow): boolean {
+  return epicPathwayMatchesVha(
+    { pathway: row.pathway, epic_episode: row.epicEpisode },
+    row.matchedPathway
+  );
 }
 
 function iclMatches(
@@ -54,7 +50,7 @@ function buildResultSummary(row: ReconciliationDetailRow): string {
   if (epicMrn && vhaMrn && !mrnMatches(row.mrn, row.matchedMrn)) {
     parts.push('MRN mismatch');
   }
-  if (!pathwayMatches(row.pathway, row.matchedPathway)) {
+  if (!pathwayMatches(row)) {
     parts.push('Pathway mismatch');
   }
   if (!iclMatches(row.icLead, row.matchedIcLead)) {
@@ -157,7 +153,7 @@ export function ConversionDiscrepanciesPanel({
       <section className="hc-epic-split-panel hc-epic-split-panel--main hc-conversion-discrepancies">
         <h3 className="hc-epic-split-panel-title">
           <span className="hc-epic-split-panel-title-main">
-            Conversion Validation
+            Episode Validation
             <span className="hc-epic-split-panel-count">0</span>
           </span>
         </h3>
@@ -172,7 +168,7 @@ export function ConversionDiscrepanciesPanel({
     <section className="hc-epic-split-panel hc-epic-split-panel--main hc-conversion-discrepancies">
         <h3 className="hc-epic-split-panel-title">
           <span className="hc-epic-split-panel-title-main">
-            Conversion Validation
+            Episode Validation
             <span className="hc-epic-split-panel-count">{rowCount}</span>
           </span>
           <button
@@ -293,7 +289,7 @@ export function ConversionDiscrepanciesPanel({
               <tbody>
                 {reconciliationDetails.map((row) => {
                   const mrnOk = mrnMatches(row.mrn, row.matchedMrn);
-                  const pathwayOk = pathwayMatches(row.pathway, row.matchedPathway);
+                  const pathwayOk = pathwayMatches(row);
                   const iclOk = iclMatches(row.icLead, row.matchedIcLead);
                   const statusAffected =
                     row.outcome === 'status_discrepancy' || row.outcome === 'missing_from_epic';

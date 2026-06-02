@@ -11,13 +11,25 @@ function addDaysToIsoDate(isoDate: string, days: number): string | null {
   return d.toISOString().slice(0, 10);
 }
 
+export function programEndDaysForPathway(pathway: string | null | undefined): number {
+  return pathway === 'UHN-TRANSITION' ? 120 : 90;
+}
+
+/** Expected program end from Hosp DC Date (+90 days, or +120 for UHN-TRANSITION). */
+export function computeExpectedProgramEndDate(
+  hospDcDate: string | null | undefined,
+  pathway: string | null | undefined
+): string | null {
+  if (!hospDcDate?.trim()) return null;
+  return addDaysToIsoDate(hospDcDate.trim(), programEndDaysForPathway(pathway));
+}
+
 function computePddDate(
   record: Pick<EpicConversionRecord, 'hosp_dc_date' | 'registration_date' | 'pathway'>
 ): string | null {
   const base = record.hosp_dc_date ?? record.registration_date;
   if (!base) return null;
-  const days = record.pathway === 'UHN-TRANSITION' ? 120 : 90;
-  return addDaysToIsoDate(base, days);
+  return addDaysToIsoDate(base, programEndDaysForPathway(record.pathway));
 }
 
 export function resolveSsdbAbsenceDischargeDate(

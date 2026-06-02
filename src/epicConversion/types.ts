@@ -43,6 +43,8 @@ export interface EpicConversionRecord {
   icl_decision_at: string | null;
   completed_by: string | null;
   completed_at: string | null;
+  care_plan_completed_by: string | null;
+  care_plan_completed_at: string | null;
   discharge_date_source: DischargeDateSource | null;
   discharge_date: string | null;
   discharge_reason: string | null;

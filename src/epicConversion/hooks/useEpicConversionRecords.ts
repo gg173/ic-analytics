@@ -484,6 +484,35 @@ export function useEpicConversionRecords() {
     []
   );
 
+  const setCarePlanCompletion = useCallback(
+    async (id: string, completedBy: string | null) => {
+      const care_plan_completed_by = completedBy;
+      const care_plan_completed_at = completedBy ? new Date().toISOString() : null;
+
+      const { error: updateError } = await supabase
+        .from('epic_conversion_records')
+        .update({ care_plan_completed_by, care_plan_completed_at })
+        .eq('id', id);
+
+      if (updateError) return { error: updateError.message };
+
+      setRecords((prev) =>
+        prev.map((r) =>
+          r.id === id
+            ? {
+                ...r,
+                care_plan_completed_by,
+                care_plan_completed_at,
+                updated_at: new Date().toISOString(),
+              }
+            : r
+        )
+      );
+      return { error: null as string | null };
+    },
+    []
+  );
+
   const deleteImport = useCallback(
     async (sourceFilename: string, importedAt: string) => {
       const { error: deleteError } = await supabase
@@ -506,6 +535,7 @@ export function useEpicConversionRecords() {
     refresh,
     insertRows,
     setCompletion,
+    setCarePlanCompletion,
     changeFromDischargePending,
     changeFromEpisodeConversionPending,
     setDischargeDetails,

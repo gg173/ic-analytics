@@ -73,3 +73,30 @@ export function mapEpicEpisodeToVhaPathway(episode: string | null | undefined): 
   );
   return caseInsensitive?.[1] ?? null;
 }
+
+function normalizeVhaPathwayCode(value: string | null | undefined): string {
+  return (value ?? '').trim().toUpperCase();
+}
+
+/** VHA pathway code for an Epic report row using current runtime episode mappings. */
+export function resolveEpicVhaPathwayCode(reportRow: {
+  pathway: string | null;
+  epic_episode: string | null;
+}): string | null {
+  const fromEpisode = mapEpicEpisodeToVhaPathway(reportRow.epic_episode);
+  if (fromEpisode) return fromEpisode;
+
+  const stored = reportRow.pathway?.trim();
+  if (!stored) return null;
+
+  return mapEpicEpisodeToVhaPathway(stored) ?? stored;
+}
+
+export function epicPathwayMatchesVha(
+  reportRow: { pathway: string | null; epic_episode: string | null },
+  vhaPathway: string | null | undefined
+): boolean {
+  const epicCode = resolveEpicVhaPathwayCode(reportRow);
+  if (!epicCode || !vhaPathway?.trim()) return false;
+  return normalizeVhaPathwayCode(epicCode) === normalizeVhaPathwayCode(vhaPathway);
+}

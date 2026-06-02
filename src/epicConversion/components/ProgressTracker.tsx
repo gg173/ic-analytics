@@ -11,6 +11,7 @@ import {
   type UnifiedImportActivityRow,
 } from '../progress/computeUnifiedImportActivity';
 import type { DailyProgressSnapshot } from '../progress/computeDailyProgressSeries';
+import type { CarePlanProgressMetrics } from '../carePlan/linkCarePlans';
 import type { ProgressMetrics } from '../progress/computeProgressMetrics';
 import { DailyProgressChart } from './DailyProgressChart';
 
@@ -46,7 +47,7 @@ function ProgressBar({
     decidedConvert: number;
     decidedDischarge: number;
   };
-  statUnit?: 'converted' | 'completed' | 'icl-reassessment' | 'discharge-submitted';
+  statUnit?: 'converted' | 'completed' | 'icl-reassessment' | 'discharge-submitted' | 'care-plan';
 }) {
   const validatedPercentOfComplete =
     validatedComplete != null && complete > 0
@@ -61,8 +62,13 @@ function ProgressBar({
       ? `, ${validatedComplete} of ${complete} converted Epic episodes validated (${validatedPercentOfComplete}% of converted)`
       : '';
   const isEpisodeConversion = statUnit === 'converted';
+  const isCarePlanConversion = statUnit === 'care-plan';
   const isIclReassessment = statUnit === 'icl-reassessment';
   const isDischargeSubmitted = statUnit === 'discharge-submitted';
+  const carePlanConversionLabel =
+    validatedComplete != null && complete > 0
+      ? `, ${validatedComplete} of ${complete} linked episodes with care plan conversion completed (${validatedPercentOfComplete}% of linked)`
+      : '';
 
   return (
     <div className="hc-progress-bar-group">
@@ -75,7 +81,9 @@ function ProgressBar({
         aria-label={
           isEpisodeConversion
             ? `${complete} of ${total} VHA enrolments converted to Epic episodes, ${percent}%${validatedLabel}`
-            : isIclReassessment && iclStats
+            : isCarePlanConversion
+              ? `${complete} of ${total} episodes with care plan data linked, ${percent}%${carePlanConversionLabel}`
+              : isIclReassessment && iclStats
               ? `${complete} of ${total} reassessments completed, ${percent}%. ${iclStats.decidedConvert} of ${complete} decisions to convert (${convertDecisionPercent}%), ${iclStats.decidedDischarge} of ${complete} decisions to discharge (${dischargeDecisionPercent}%)`
               : isDischargeSubmitted
                 ? `${complete} of ${total} discharges submitted, ${percent}%`
@@ -94,7 +102,11 @@ function ProgressBar({
                   : ''
               }`}
               style={{ width: `${validatedPercentOfComplete}%` }}
-              title={`${validatedComplete} of ${complete} converted Epic episodes validated`}
+              title={
+                isCarePlanConversion
+                  ? `${validatedComplete} of ${complete} linked episodes with care plan conversion completed`
+                  : `${validatedComplete} of ${complete} converted Epic episodes validated`
+              }
             />
           ) : null}
         </div>
@@ -108,6 +120,18 @@ function ProgressBar({
             {validatedComplete != null ? (
               <p className="hc-progress-bar-stat hc-progress-bar-stat--validated">
                 {validatedComplete} / {complete} converted Epic episodes validated (
+                {validatedPercentOfComplete}%)
+              </p>
+            ) : null}
+          </>
+        ) : isCarePlanConversion ? (
+          <>
+            <p className="hc-progress-bar-stat hc-progress-bar-stat--converted">
+              {complete} / {total} episodes with care plan data linked ({percent}%)
+            </p>
+            {validatedComplete != null ? (
+              <p className="hc-progress-bar-stat hc-progress-bar-stat--validated">
+                {validatedComplete} / {complete} linked episodes with care plan conversion completed (
                 {validatedPercentOfComplete}%)
               </p>
             ) : null}
@@ -158,7 +182,7 @@ function BucketCard({
     decidedConvert: number;
     decidedDischarge: number;
   };
-  statUnit?: 'converted' | 'completed' | 'icl-reassessment' | 'discharge-submitted';
+  statUnit?: 'converted' | 'completed' | 'icl-reassessment' | 'discharge-submitted' | 'care-plan';
   onClick?: () => void;
 }) {
   const handleKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
@@ -197,11 +221,13 @@ function BucketCard({
 
 interface ProgressTrackerProps {
   metrics: ProgressMetrics;
+  carePlanMetrics: CarePlanProgressMetrics;
   dailyProgressSeries: DailyProgressSnapshot[];
   unifiedImportActivity: UnifiedImportActivityRow[];
   uploaderByUserId: Map<string, BatchUploader>;
   reportUploaderByUserId: Map<string, BatchUploader>;
   onNavigateToStrategy?: (strategy: string) => void;
+  onNavigateToCarePlan?: () => void;
 }
 
 function resolveUploaderName(
@@ -216,11 +242,13 @@ function resolveUploaderName(
 
 export function ProgressTracker({
   metrics,
+  carePlanMetrics,
   dailyProgressSeries,
   unifiedImportActivity,
   uploaderByUserId,
   reportUploaderByUserId,
   onNavigateToStrategy,
+  onNavigateToCarePlan,
 }: ProgressTrackerProps) {
   const hasGoLive = metrics.daysUntilGoLive != null;
   const daysUntilGoLive = metrics.daysUntilGoLive;
@@ -258,6 +286,15 @@ export function ProgressTracker({
               ? () => onNavigateToStrategy(EPISODE_CONVERSION_STRATEGY)
               : undefined
           }
+        />
+        <BucketCard
+          title="Care Plan Conversion"
+          total={carePlanMetrics.total}
+          complete={carePlanMetrics.linkedComplete}
+          percentComplete={carePlanMetrics.percentLinked}
+          validatedComplete={carePlanMetrics.conversionComplete}
+          statUnit="care-plan"
+          onClick={onNavigateToCarePlan}
         />
         <BucketCard
           title="ICL Reassessment Required"

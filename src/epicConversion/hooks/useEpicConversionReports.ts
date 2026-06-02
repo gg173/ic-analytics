@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase';
 import type { EpicConversionRecord } from '../types';
 import { parseEpicConversionReportBuffer } from '../ingest/parseEpicConversionReport';
 import { mergeEpicReportRowsByMrn } from '../reconciliation/mergeEpicReportRows';
+import { refreshRuntimeEpicConversionMaps } from '../reconciliation/refreshRuntimeEpicConversionMaps';
 import {
   buildReconciliationDetails,
   countUnmatchedResolvedByLatestEpicUpload,
@@ -22,9 +23,37 @@ import type {
   ReconciliationOutcome,
   ReconciliationSummary,
 } from '../reconciliation/types';
-
 const REPORT_ROW_CHUNK = 400;
 const RECONCILIATION_CHUNK = 400;
+/** PostgREST default page size; paginate so large / multi-import reports reconcile fully. */
+const REPORT_ROW_FETCH_STEP = 1000;
+
+async function fetchAllEpicReportRowsForImport(
+  importId: string
+): Promise<{ rows: EpicConversionReportRow[]; error: string | null }> {
+  const all: EpicConversionReportRow[] = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('epic_conversion_report_rows')
+      .select('*')
+      .eq('import_id', importId)
+      .order('row_index', { ascending: true })
+      .range(from, from + REPORT_ROW_FETCH_STEP - 1);
+
+    if (error) {
+      return { rows: [], error: error.message };
+    }
+
+    const chunk = (data as EpicConversionReportRow[]) ?? [];
+    all.push(...chunk);
+    if (chunk.length < REPORT_ROW_FETCH_STEP) break;
+    from += REPORT_ROW_FETCH_STEP;
+  }
+
+  return { rows: all, error: null };
+}
 
 export interface EpicReportUploadResult {
   error: string | null;
@@ -115,6 +144,12 @@ export function useEpicConversionReports(vhaRecords: EpicConversionRecord[]) {
   }, [refresh]);
 
   const loadUnifiedReconciliationDetails = useCallback(async () => {
+    const mapsResult = await refreshRuntimeEpicConversionMaps();
+    if (mapsResult.error) {
+      setUnifiedReconciliationDetails([]);
+      return [];
+    }
+
     const { data: importRows, error: importsError } = await supabase
       .from('epic_conversion_report_imports')
       .select('id, imported_at, source_filename');
@@ -138,20 +173,32 @@ export function useEpicConversionReports(vhaRecords: EpicConversionRecord[]) {
       return [];
     }
 
-    const { data: reportRows, error: rowsError } = await supabase
-      .from('epic_conversion_report_rows')
-      .select('*')
-      .order('row_index', { ascending: true });
+    let latestImportId: string | null = null;
+    let latestImportedAt = '';
+    for (const imp of importMetaById.values()) {
+      if (!latestImportId || imp.imported_at > latestImportedAt) {
+        latestImportId = imp.id;
+        latestImportedAt = imp.imported_at;
+      }
+    }
+
+    if (!latestImportId) {
+      setUnifiedReconciliationDetails([]);
+      return [];
+    }
+
+    const { rows: reportRows, error: rowsError } =
+      await fetchAllEpicReportRowsForImport(latestImportId);
 
     if (rowsError) {
       setUnifiedReconciliationDetails([]);
       return [];
     }
 
-    const rowsWithMeta = ((reportRows as EpicConversionReportRow[]) ?? [])
+    const rowsWithMeta = reportRows
       .map((row) => ({
         ...row,
-        importedAt: importMetaById.get(row.import_id)?.imported_at ?? '',
+        importedAt: latestImportedAt,
       }))
       .filter((row) => row.importedAt);
 
@@ -370,6 +417,11 @@ export function useEpicConversionReports(vhaRecords: EpicConversionRecord[]) {
         setRecheckingImportId(importId);
       }
       try {
+        const mapsResult = await refreshRuntimeEpicConversionMaps();
+        if (mapsResult.error) {
+          return { error: mapsResult.error };
+        }
+
         const { data: reportRows, error: rowsError } = await supabase
           .from('epic_conversion_report_rows')
           .select('*')

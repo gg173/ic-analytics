@@ -4,6 +4,17 @@ function stripParentheticals(value: string): string {
   return value.replace(/\([^)]*\)/g, '').replace(/#[^\s,]*/g, '').trim();
 }
 
+/** Display form of VHA SSDB ic_lead (drops `(UHN)` and `(#id)` suffixes per name). */
+export function formatVhaIcLeadDisplay(value: string | null | undefined): string | null {
+  if (!value?.trim()) return null;
+  const primary = value.split(';')[0].trim();
+  const parts = primary
+    .split(',')
+    .map((part) => stripParentheticals(part).trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts.join(', ') : null;
+}
+
 export interface ParsedIclName {
   surname: string;
   given: string;

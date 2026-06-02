@@ -1,5 +1,6 @@
 import type { EpicConversionRecord } from '../types';
 import { iclNamesMatch } from './epicIclMatch';
+import { epicPathwayMatchesVha } from './epicPathwayMap';
 import {
   getVhaWorkflowStatus,
   isMatchedStatusDiscrepancy,
@@ -22,12 +23,8 @@ export function normalizeMrnForMatch(mrn: string): string {
   return digits.replace(/^0+/, '') || '0';
 }
 
-function normalizePathway(value: string | null | undefined): string {
-  return (value ?? '').trim().toUpperCase();
-}
-
 export function compareReconciliationFields(
-  reportRow: Pick<EpicConversionReportRow, 'mrn' | 'pathway' | 'ic_lead'>,
+  reportRow: Pick<EpicConversionReportRow, 'mrn' | 'pathway' | 'epic_episode' | 'ic_lead'>,
   record: Pick<EpicConversionRecord, 'mrn' | 'pathway' | 'ic_lead'>
 ): ReconciliationCompareField[] {
   const discrepancies: ReconciliationCompareField[] = [];
@@ -36,11 +33,7 @@ export function compareReconciliationFields(
     discrepancies.push('mrn');
   }
 
-  const pathwayMatch =
-    !!reportRow.pathway &&
-    !!record.pathway &&
-    normalizePathway(reportRow.pathway) === normalizePathway(record.pathway);
-  if (!pathwayMatch) {
+  if (!epicPathwayMatchesVha(reportRow, record.pathway)) {
     discrepancies.push('pathway');
   }
 
@@ -54,21 +47,18 @@ export function compareReconciliationFields(
 }
 
 export function isPerfectFieldMatch(
-  reportRow: Pick<EpicConversionReportRow, 'mrn' | 'pathway' | 'ic_lead'>,
+  reportRow: Pick<EpicConversionReportRow, 'mrn' | 'pathway' | 'epic_episode' | 'ic_lead'>,
   record: Pick<EpicConversionRecord, 'mrn' | 'pathway' | 'ic_lead'>
 ): boolean {
   return compareReconciliationFields(reportRow, record).length === 0;
 }
 
 function partialMatchScore(
-  reportRow: Pick<EpicConversionReportRow, 'pathway' | 'ic_lead'>,
+  reportRow: Pick<EpicConversionReportRow, 'pathway' | 'epic_episode' | 'ic_lead'>,
   record: EpicConversionRecord
 ): number {
   let score = 0;
-  if (
-    reportRow.pathway &&
-    normalizePathway(reportRow.pathway) === normalizePathway(record.pathway)
-  ) {
+  if (epicPathwayMatchesVha(reportRow, record.pathway)) {
     score += 4;
   }
   if (reportRow.ic_lead && iclNamesMatch(reportRow.ic_lead, record.ic_lead)) {
@@ -478,7 +468,20 @@ export function buildEpicValidationStatusByRecordId(
         status: 'validated',
         filename: row.epicImportFilename ?? 'Epic conversion report',
       });
-    } else if (isDiscrepancyOutcome(row.outcome)) {
+    }
+  }
+
+  for (const row of unifiedDetails) {
+    if (!row.matchedRecordId) continue;
+
+    const record = recordsById?.get(row.matchedRecordId);
+    if (record && isConversionPendingEpicAdjudication(record, latestEpicImportedAt)) {
+      continue;
+    }
+
+    if (map.get(row.matchedRecordId)?.status === 'validated') continue;
+
+    if (isDiscrepancyOutcome(row.outcome)) {
       map.set(row.matchedRecordId, {
         status: 'discrepancy',
         detail: describeReconciliationDiscrepancy(row),
