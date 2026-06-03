@@ -377,9 +377,20 @@
   margin-bottom: 0.75rem;
 }
 
+.hc-care-plan-conversion .hc-toolbar label.hc-search--care-plan {
+  flex: 1 1 0;
+  min-width: 8rem;
+}
+
 .hc-care-plan-conversion .hc-toolbar .hc-toolbar-field--pathway {
-  flex: 0.9 1 0;
-  max-width: 11.5rem;
+  flex: 1.1 1 0;
+  max-width: 14rem;
+}
+
+.hc-care-plan-conversion .hc-toolbar .hc-toolbar-field--episode-conversion {
+  flex: 1.1 1 0;
+  min-width: 10.5rem;
+  max-width: 15rem;
 }
 
 .hc-care-plan-conversion .hc-toolbar .hc-toolbar-field--lvd {
@@ -390,43 +401,92 @@
   white-space: nowrap;
 }
 
-.hc-care-plan-conversion .hc-toolbar .hc-toolbar-field--lvd .hc-toolbar-field-lvd-control {
+.hc-care-plan-conversion .hc-toolbar .hc-toolbar-lvd-range {
   display: inline-flex;
   flex: 0 0 auto;
   flex-wrap: nowrap;
   align-items: center;
-  width: max-content;
-  gap: 0.85rem;
+  gap: 0.15rem;
   height: 100%;
-  margin-left: 0.5rem;
-  padding: 0 0.4rem;
+  margin-left: 0.35rem;
+  padding-left: 0.35rem;
   border-left: 1px solid #e2e8f0;
   white-space: nowrap;
-  overflow: visible;
 }
 
-.hc-care-plan-conversion .hc-toolbar .hc-toolbar-field-lvd-option {
-  display: inline-flex;
+.hc-care-plan-conversion .hc-toolbar .hc-toolbar-lvd-range-sep {
   flex: 0 0 auto;
-  flex-flow: row nowrap;
-  align-items: center;
-  gap: 0.15rem;
   font-size: 0.6rem;
-  font-weight: 500;
-  color: #1d4ed8;
+  line-height: 1;
+  color: #64748b;
+}
+
+.hc-care-plan-conversion .hc-toolbar .hc-toolbar-lvd-range-input-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  width: 7.5rem;
+  height: 100%;
+  min-width: 0;
+}
+
+.hc-care-plan-conversion .hc-toolbar .hc-toolbar-lvd-range-input {
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0 0.35rem;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-family: inherit;
+  font-size: 0.7rem;
+  line-height: 26px;
+  text-align: center;
+  color: transparent;
   cursor: pointer;
+  box-sizing: border-box;
+}
+
+.hc-care-plan-conversion .hc-toolbar .hc-toolbar-lvd-range-input:focus {
+  outline: none;
+}
+
+.hc-care-plan-conversion .hc-toolbar .hc-toolbar-lvd-range-input-wrap--has-value
+  .hc-toolbar-lvd-range-input::-webkit-datetime-edit,
+.hc-care-plan-conversion .hc-toolbar .hc-toolbar-lvd-range-input-wrap--has-value
+  .hc-toolbar-lvd-range-input::-webkit-datetime-edit-fields-wrapper,
+.hc-care-plan-conversion .hc-toolbar .hc-toolbar-lvd-range-input-wrap--has-value
+  .hc-toolbar-lvd-range-input::-webkit-datetime-edit-text,
+.hc-care-plan-conversion .hc-toolbar .hc-toolbar-lvd-range-input-wrap--has-value
+  .hc-toolbar-lvd-range-input::-webkit-datetime-edit-month-field,
+.hc-care-plan-conversion .hc-toolbar .hc-toolbar-lvd-range-input-wrap--has-value
+  .hc-toolbar-lvd-range-input::-webkit-datetime-edit-day-field,
+.hc-care-plan-conversion .hc-toolbar .hc-toolbar-lvd-range-input-wrap--has-value
+  .hc-toolbar-lvd-range-input::-webkit-datetime-edit-year-field {
+  opacity: 0;
+}
+
+.hc-care-plan-conversion .hc-toolbar .hc-toolbar-lvd-range-display {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.35rem;
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 500;
+  line-height: 26px;
+  color: #1d4ed8;
+  pointer-events: none;
   white-space: nowrap;
 }
 
-.hc-care-plan-conversion .hc-toolbar .hc-toolbar-field--lvd input[type='radio'] {
-  margin: 0;
-  flex: 0 0 auto;
-  width: auto;
-  min-width: 0;
-  padding: 0;
-  border: none;
-  border-radius: 0;
-  box-shadow: none;
+.hc-care-plan-conversion .hc-toolbar .hc-toolbar-lvd-range-input::-webkit-calendar-picker-indicator {
+  display: none;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .hc-care-plan-conversion .hc-progress-reconcile-summary .hc-reconcile-stat {
@@ -458,9 +518,15 @@
   padding: 0.4rem 0.5rem;
 }
 
+.hc-care-plan-conversion .hc-table-wrap--wide {
+  overflow-x: hidden;
+  min-width: 0;
+}
+
 .hc-care-plan-conversion .hc-table--care-plan-patients {
   table-layout: fixed;
   width: 100%;
+  min-width: 0;
 }
 
 .hc-care-plan-conversion .hc-table--care-plan-patients th,
@@ -490,27 +556,33 @@
 
 .hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-ic-lead,
 .hc-care-plan-conversion .hc-table--care-plan-patients col.hc-care-plan-col-ic-lead {
-  width: 14%;
+  width: 10%;
 }
 
 .hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-hosp-dc,
 .hc-care-plan-conversion .hc-table--care-plan-patients col.hc-care-plan-col-hosp-dc {
-  width: 7.5rem;
+  width: 6.75rem;
 }
 
 .hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-plan,
 .hc-care-plan-conversion .hc-table--care-plan-patients col.hc-care-plan-col-plan {
-  width: 7.5rem;
+  width: 7rem;
 }
 
 .hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-latest,
 .hc-care-plan-conversion .hc-table--care-plan-patients col.hc-care-plan-col-latest {
-  width: 9.5rem;
+  width: 8.25rem;
 }
 
 .hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-lvd,
 .hc-care-plan-conversion .hc-table--care-plan-patients col.hc-care-plan-col-lvd {
-  width: 7.5rem;
+  width: 6.75rem;
+}
+
+.hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-eligibility,
+.hc-care-plan-conversion .hc-table--care-plan-patients col.hc-care-plan-col-eligibility {
+  width: 5.25rem;
+  max-width: 5.25rem;
 }
 
 .hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-hosp-dc,
@@ -558,11 +630,27 @@
 .hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-eligibility {
   white-space: normal;
   word-break: break-word;
+  overflow: hidden;
+  font-size: 0.65rem;
+  line-height: 1.2;
+}
+
+.hc-care-plan-conversion .hc-table--care-plan-patients thead th.hc-care-plan-col-eligibility,
+.hc-care-plan-conversion .hc-table--care-plan-patients thead th.hc-care-plan-col-care-plan-status {
+  white-space: normal;
+  line-height: 1.15;
+  vertical-align: bottom;
 }
 
 .hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-care-plan-status,
 .hc-care-plan-conversion .hc-table--care-plan-patients col.hc-care-plan-col-care-plan-status {
-  width: 9.5rem;
+  width: 11.75rem;
+  min-width: 11.75rem;
+}
+
+.hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-care-plan-status .hc-status-radios {
+  flex-wrap: wrap;
+  row-gap: 0.2rem;
 }
 
 .hc-care-plan-conversion .hc-table--care-plan-patients-completed col.hc-care-plan-col-ic-lead,
@@ -777,8 +865,7 @@
 }
 
 .hc-table--care-plan-rows:not(.hc-table--care-plan-rows-list) td:nth-child(n + 4),
-.hc-table--care-plan-patients .hc-care-plan-col-ic-lead,
-.hc-table--care-plan-patients .hc-care-plan-col-eligibility {
+.hc-table--care-plan-patients .hc-care-plan-col-ic-lead {
   max-width: none;
   white-space: normal;
   word-break: break-word;
@@ -3602,7 +3689,17 @@ select.hc-cell-input {
   text-align: left;
 }
 
-.hc-toolbar .hc-toolbar-multiselect-option {
+.hc-toolbar-multiselect-menu--floating {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  min-width: 0;
+  max-height: min(18rem, calc(100dvh - 5rem));
+}
+
+/* Menus portal to document.body — scope options on the menu, not .hc-toolbar. */
+.hc-toolbar-multiselect-menu .hc-toolbar-multiselect-option {
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -3620,15 +3717,15 @@ select.hc-cell-input {
   border-bottom: 1px solid #e2e8f0;
 }
 
-.hc-toolbar .hc-toolbar-multiselect-option:last-child {
+.hc-toolbar-multiselect-menu .hc-toolbar-multiselect-option:last-child {
   border-bottom: none;
 }
 
-.hc-toolbar .hc-toolbar-multiselect-option:hover {
+.hc-toolbar-multiselect-menu .hc-toolbar-multiselect-option:hover {
   background: rgba(15, 23, 42, 0.04);
 }
 
-.hc-toolbar .hc-toolbar-multiselect-option input {
+.hc-toolbar-multiselect-menu .hc-toolbar-multiselect-option input {
   flex: 0 0 auto;
   width: auto;
   min-width: 0;
@@ -3638,10 +3735,90 @@ select.hc-cell-input {
   margin: 0;
 }
 
-.hc-toolbar .hc-toolbar-multiselect-option span {
+.hc-toolbar-multiselect-menu .hc-toolbar-multiselect-option span {
   flex: 0 0 auto;
   white-space: nowrap;
   text-align: left;
+}
+
+.hc-toolbar-multiselect-menu--pathway-nested {
+  min-width: 14rem;
+}
+
+/* Portaled menu is outside .hc-toolbar — scope option layout here. */
+.hc-toolbar-multiselect-menu--pathway-nested .hc-toolbar-multiselect-option {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.45rem;
+  width: max-content;
+  min-width: 100%;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 400;
+  line-height: 1.25;
+  color: #1a1a2e;
+  cursor: pointer;
+  box-sizing: border-box;
+  border-bottom: none;
+}
+
+.hc-toolbar-multiselect-menu--pathway-nested .hc-toolbar-multiselect-option:hover {
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.hc-toolbar-multiselect-menu--pathway-nested .hc-toolbar-multiselect-option input {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  margin: 0;
+}
+
+.hc-toolbar-multiselect-menu--pathway-nested .hc-toolbar-multiselect-option span {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.hc-toolbar-multiselect-menu--pathway-nested > .hc-toolbar-multiselect-option {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.hc-toolbar-pathway-group {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.hc-toolbar-pathway-group:last-child {
+  border-bottom: none;
+}
+
+.hc-toolbar-multiselect-menu--pathway-nested .hc-toolbar-multiselect-option--pathway {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+
+.hc-toolbar-multiselect-menu--pathway-nested .hc-toolbar-multiselect-option--care-path {
+  padding: 0.22rem 0.55rem 0.22rem 2rem;
+  font-size: 0.65rem;
+  font-weight: 400;
+  color: #475569;
+}
+
+.hc-toolbar-multiselect-menu--pathway-nested
+  .hc-toolbar-pathway-group:has(.hc-toolbar-multiselect-option--care-path)
+  .hc-toolbar-multiselect-option--pathway {
+  padding-bottom: 0.12rem;
+}
+
+.hc-toolbar-multiselect-empty {
+  margin: 0;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.72rem;
 }
 
 .hc-toolbar input,

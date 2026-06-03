@@ -195,14 +195,75 @@ export function getLatestCarePlanRow(link: CarePlanPatientLink): LinkedCarePlanR
 /** Start of 19 May 2026 (local). Latest care plan before this date needs an update. */
 export const CARE_PLAN_UPDATE_REQUIRED_BEFORE_MS = new Date(2026, 4, 19).getTime();
 
-/** Start of 22 June 2026 (local). Care plan conversion toolbar LVD minimum. */
-export const CARE_PLAN_LVD_FILTER_MIN_MS = new Date(2026, 5, 22).getTime();
+export interface CarePlanLvdDateRange {
+  from: string;
+  to: string;
+}
 
-export function isLvdOnOrAfterCarePlanToolbarMin(lvd: string | null | undefined): boolean {
-  if (!lvd?.trim()) return false;
+export function parseLvdMs(lvd: string | null | undefined): number | null {
+  if (!lvd?.trim()) return null;
   const parsed = Date.parse(`${lvd.trim()}T12:00:00`);
-  if (Number.isNaN(parsed)) return false;
-  return parsed >= CARE_PLAN_LVD_FILTER_MIN_MS;
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function formatMsForDateInput(ms: number): string {
+  const d = new Date(ms);
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${month}-${day}`;
+}
+
+/** Display ISO date input value (YYYY-MM-DD) as DD MMM YYYY. */
+export function formatIsoDateInputDisplay(isoDate: string): string {
+  if (!isoDate) return '';
+  const d = new Date(`${isoDate}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return '';
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = d.toLocaleDateString('en-US', { month: 'short' });
+  return `${day} ${month} ${d.getFullYear()}`;
+}
+
+export function computeDefaultLvdDateRange(
+  links: readonly Pick<CarePlanPatientLink, 'lvd'>[]
+): CarePlanLvdDateRange {
+  let minMs: number | null = null;
+  let maxMs: number | null = null;
+
+  for (const link of links) {
+    const ms = parseLvdMs(link.lvd);
+    if (ms == null) continue;
+    if (minMs == null || ms < minMs) minMs = ms;
+    if (maxMs == null || ms > maxMs) maxMs = ms;
+  }
+
+  if (minMs == null || maxMs == null) return { from: '', to: '' };
+
+  return {
+    from: formatMsForDateInput(minMs),
+    to: formatMsForDateInput(maxMs),
+  };
+}
+
+export function lvdMatchesToolbarDateRange(
+  lvd: string | null | undefined,
+  range: CarePlanLvdDateRange
+): boolean {
+  if (!range.from && !range.to) return true;
+
+  const lvdMs = parseLvdMs(lvd);
+  if (lvdMs == null) return false;
+
+  if (range.from) {
+    const fromMs = Date.parse(`${range.from}T12:00:00`);
+    if (!Number.isNaN(fromMs) && lvdMs < fromMs) return false;
+  }
+
+  if (range.to) {
+    const toMs = Date.parse(`${range.to}T12:00:00`);
+    if (!Number.isNaN(toMs) && lvdMs > toMs) return false;
+  }
+
+  return true;
 }
 
 export function isCarePlanDateStale(dateSaved: string | null | undefined): boolean {

@@ -1,55 +1,196 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { carePlanContentKindLabel } from '../carePlan/classifyCarePlanContent';
 import {
   buildCarePlanPatientLinks,
   eligibilityReasonLabel,
   getLatestCarePlanRow,
   isCarePlanDateStale,
-  isLvdOnOrAfterCarePlanToolbarMin,
+  computeDefaultLvdDateRange,
+  formatIsoDateInputDisplay,
+  lvdMatchesToolbarDateRange,
   patientNeedsCarePlanUpdate,
   recordHasTemplatedCarePlan,
   summarizeCarePlanLinks,
+  type CarePlanLvdDateRange,
 } from '../carePlan/linkCarePlans';
 import type { CarePlanContentKind } from '../carePlan/types';
 import type {
+  CarePlanEligibilityReason,
   CarePlanLinkSummary,
   CarePlanPatientFilter,
   CarePlanPatientLink,
 } from '../carePlan/types';
 
-type CarePlanLvdFilter = 'all' | 'min_june_22';
+function lvdDateRangesEqual(a: CarePlanLvdDateRange, b: CarePlanLvdDateRange): boolean {
+  return a.from === b.from && a.to === b.to;
+}
+
+function openToolbarDatePicker(e: MouseEvent<HTMLInputElement>) {
+  const input = e.currentTarget;
+  if (typeof input.showPicker !== 'function') return;
+  try {
+    void input.showPicker();
+  } catch {
+    /* picker already open or unavailable */
+  }
+}
+
+function ToolbarLvdDateInput({
+  value,
+  min,
+  max,
+  ariaLabel,
+  onChange,
+}: {
+  value: string;
+  min?: string;
+  max?: string;
+  ariaLabel: string;
+  onChange: (value: string) => void;
+}) {
+  const displayValue = formatIsoDateInputDisplay(value);
+
+  return (
+    <span
+      className={`hc-toolbar-lvd-range-input-wrap${
+        displayValue ? ' hc-toolbar-lvd-range-input-wrap--has-value' : ''
+      }`}
+    >
+      <input
+        type="date"
+        className="hc-toolbar-lvd-range-input"
+        value={value}
+        min={min}
+        max={max}
+        onClick={openToolbarDatePicker}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={ariaLabel}
+      />
+      {displayValue ? (
+        <span className="hc-toolbar-lvd-range-display" aria-hidden>
+          {displayValue}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+type CarePlanTableSortKey = 'hosp_dc' | 'latest_care_plan' | 'lvd';
+type SortDirection = 'asc' | 'desc';
+
+const EPISODE_CONVERSION_STATUS_FILTER_OPTIONS: readonly CarePlanEligibilityReason[] = [
+  'converted',
+  'validated',
+  'icl_pending',
+];
 import type { EpicConversionRecord } from '../types';
 import { AttachmentIcon } from './CarePlanRowDetailModal';
 import { CarePlanRowsListModal } from './CarePlanRowsListModal';
+import {
+  buildPathwayCarePathFilterGroups,
+  isPathwayCarePathFilterActive,
+  linkMatchesPathwayCarePathScope,
+  matchesPathwayCarePathFilter,
+  PATHWAY_CARE_PATH_FILTER_ALL,
+  prunePathwayCarePathFilterSelection,
+  type PathwayCarePathFilterSelection,
+} from '../carePlan/pathwayCarePathFilter';
 import { matchesMultiFilter, ToolbarMultiSelect } from './ToolbarMultiSelect';
+import { ToolbarPathwayCarePathMultiSelect } from './ToolbarPathwayCarePathMultiSelect';
 
-function distinctLinkOptions(
-  links: CarePlanPatientLink[],
-  selector: (link: CarePlanPatientLink) => string | null
-): string[] {
-  const set = new Set<string>();
-  for (const link of links) {
-    const v = selector(link);
-    if (v) set.add(v);
+/** Missing or unparseable dates sort as oldest (first when ascending). */
+const SORT_DATE_OLDEST = Number.NEGATIVE_INFINITY;
+
+function sortableSsdbDateTime(value: string | null | undefined): number {
+  if (!value?.trim()) return SORT_DATE_OLDEST;
+  const t = new Date(`${value.trim()}T12:00:00`).getTime();
+  return Number.isNaN(t) ? SORT_DATE_OLDEST : t;
+}
+
+function sortableCarePlanSavedTime(value: string | null | undefined): number {
+  if (!value?.trim()) return SORT_DATE_OLDEST;
+  const t = Date.parse(value.trim());
+  return Number.isNaN(t) ? SORT_DATE_OLDEST : t;
+}
+
+function compareSortDates(
+  a: string | null | undefined,
+  b: string | null | undefined,
+  direction: SortDirection
+): number {
+  const cmp = sortableSsdbDateTime(a) - sortableSsdbDateTime(b);
+  return direction === 'asc' ? cmp : -cmp;
+}
+
+function compareLatestCarePlanDates(
+  a: CarePlanPatientLink,
+  b: CarePlanPatientLink,
+  direction: SortDirection
+): number {
+  const av = getLatestCarePlanRow(a)?.dateSaved ?? null;
+  const bv = getLatestCarePlanRow(b)?.dateSaved ?? null;
+  const cmp = sortableCarePlanSavedTime(av) - sortableCarePlanSavedTime(bv);
+  return direction === 'asc' ? cmp : -cmp;
+}
+
+function compareCarePlanLinks(
+  a: CarePlanPatientLink,
+  b: CarePlanPatientLink,
+  key: CarePlanTableSortKey,
+  direction: SortDirection
+): number {
+  switch (key) {
+    case 'hosp_dc':
+      return compareSortDates(a.hospDcDate, b.hospDcDate, direction);
+    case 'latest_care_plan':
+      return compareLatestCarePlanDates(a, b, direction);
+    case 'lvd':
+      return compareSortDates(a.lvd, b.lvd, direction);
   }
-  return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+function sortCarePlanPatientLinks(
+  links: CarePlanPatientLink[],
+  sort: { key: CarePlanTableSortKey; direction: SortDirection }
+): CarePlanPatientLink[] {
+  return [...links].sort((a, b) => compareCarePlanLinks(a, b, sort.key, sort.direction));
+}
+
+function matchesEligibilityReasonFilter(
+  selected: readonly string[] | null,
+  reasons: readonly CarePlanEligibilityReason[],
+  options: readonly string[]
+): boolean {
+  if (selected === null) return true;
+  if (options.length === 0) return true;
+  if (!selected.length) return false;
+  if (!reasons.length) return false;
+  return reasons.some((reason) => selected.includes(reason));
 }
 
 function matchesCarePlanToolbarFilters(
   link: CarePlanPatientLink,
   search: string,
-  pathwayFilter: string[] | null,
-  carePathFilter: string[] | null,
+  pathwayCarePathFilter: PathwayCarePathFilterSelection,
+  pathwayCarePathGroups: ReturnType<typeof buildPathwayCarePathFilterGroups>,
   icLeadFilter: string[] | null,
-  lvdFilter: CarePlanLvdFilter,
-  pathwayOptions: readonly string[],
-  carePathOptions: readonly string[],
+  episodeConversionStatusFilter: string[] | null,
+  lvdDateRange: CarePlanLvdDateRange,
   icLeadOptions: readonly string[]
 ): boolean {
-  if (!matchesMultiFilter(pathwayFilter, link.pathway, pathwayOptions)) return false;
-  if (!matchesMultiFilter(carePathFilter, link.carePath, carePathOptions)) return false;
+  if (!matchesPathwayCarePathFilter(link, pathwayCarePathFilter, pathwayCarePathGroups)) {
+    return false;
+  }
   if (!matchesMultiFilter(icLeadFilter, link.icLead, icLeadOptions)) return false;
-  if (lvdFilter === 'min_june_22' && !isLvdOnOrAfterCarePlanToolbarMin(link.lvd)) return false;
+  if (
+    !matchesEligibilityReasonFilter(
+      episodeConversionStatusFilter,
+      link.eligibilityReasons,
+      EPISODE_CONVERSION_STATUS_FILTER_OPTIONS
+    )
+  ) {
+    return false;
+  }
+  if (!lvdMatchesToolbarDateRange(link.lvd, lvdDateRange)) return false;
   const q = search.trim().toLowerCase();
   if (!q) return true;
   return (
@@ -206,17 +347,45 @@ function CarePlanConversionCompletedCell({
 function CarePlanPatientsTable({
   links,
   mode,
+  tableSort,
+  onToggleTableSort,
   updatingRecordId,
   onOpenRows,
   onToggleCarePlanCompleted,
 }: {
   links: CarePlanPatientLink[];
   mode: 'pending' | 'completed';
+  tableSort: { key: CarePlanTableSortKey; direction: SortDirection } | null;
+  onToggleTableSort: (key: CarePlanTableSortKey) => void;
   updatingRecordId: string | null;
   onOpenRows: (link: CarePlanPatientLink) => void;
   onToggleCarePlanCompleted: (recordId: string, completed: boolean) => void;
 }) {
   const isPending = mode === 'pending';
+
+  const renderSortableHeader = (
+    label: string,
+    key: CarePlanTableSortKey,
+    className?: string
+  ) => {
+    const active = tableSort?.key === key;
+    const direction = active ? tableSort.direction : null;
+    return (
+      <th className={className}>
+        <button
+          type="button"
+          className={`hc-table-sort${direction ? ` hc-table-sort--${direction}` : ''}`}
+          aria-sort={
+            direction ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'
+          }
+          onClick={() => onToggleTableSort(key)}
+        >
+          {label}
+          <span className="hc-table-sort-indicator" aria-hidden />
+        </button>
+      </th>
+    );
+  };
 
   return (
     <div className="hc-table-wrap hc-table-wrap--wide hc-table-wrap--fill-main">
@@ -243,12 +412,18 @@ function CarePlanPatientsTable({
             <th>GC #</th>
             <th>Pathway</th>
             <th>IC Lead</th>
-            <th>Hospital DC Date</th>
+            {renderSortableHeader('Hospital DC Date', 'hosp_dc', 'hc-care-plan-col-hosp-dc')}
             <th>Care Plan</th>
-            <th>Latest Care Plan Date</th>
-            <th>LVD</th>
-            {isPending && <th>Episode Conversion Status</th>}
-            <th>Care Plan Conversion Status</th>
+            {renderSortableHeader(
+              'Latest Care Plan Date',
+              'latest_care_plan',
+              'hc-care-plan-col-latest'
+            )}
+            {renderSortableHeader('LVD', 'lvd', 'hc-care-plan-col-lvd')}
+            {isPending && (
+              <th className="hc-care-plan-col-eligibility">Episode Conversion Status</th>
+            )}
+            <th className="hc-care-plan-col-care-plan-status">Care Plan Conversion Status</th>
           </tr>
         </thead>
         <tbody>
@@ -523,38 +698,63 @@ export function CarePlanConversionPanel({
   const [selectedPatientCarePlans, setSelectedPatientCarePlans] =
     useState<CarePlanPatientLink | null>(null);
   const [search, setSearch] = useState('');
-  const [pathwayFilter, setPathwayFilter] = useState<string[] | null>(null);
-  const [carePathFilter, setCarePathFilter] = useState<string[] | null>(null);
+  const [pathwayCarePathFilter, setPathwayCarePathFilter] =
+    useState<PathwayCarePathFilterSelection>(PATHWAY_CARE_PATH_FILTER_ALL);
   const [icLeadFilter, setIcLeadFilter] = useState<string[] | null>(null);
-  const [lvdFilter, setLvdFilter] = useState<CarePlanLvdFilter>('all');
-
-  const pathwayOptions = useMemo(
-    () => distinctLinkOptions(patientLinks, (link) => link.pathway),
+  const [episodeConversionStatusFilter, setEpisodeConversionStatusFilter] = useState<
+    string[] | null
+  >(null);
+  const defaultLvdDateRange = useMemo(
+    () => computeDefaultLvdDateRange(patientLinks),
     [patientLinks]
   );
-  const carePathOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const link of patientLinks) {
-      if (!matchesMultiFilter(pathwayFilter, link.pathway, pathwayOptions)) continue;
-      if (link.carePath) set.add(link.carePath);
-    }
-    return [...set].sort((a, b) => a.localeCompare(b));
-  }, [patientLinks, pathwayFilter, pathwayOptions]);
+  const [lvdDateRange, setLvdDateRange] = useState<CarePlanLvdDateRange>(defaultLvdDateRange);
+  const [tableSort, setTableSort] = useState<{
+    key: CarePlanTableSortKey;
+    direction: SortDirection;
+  } | null>(null);
+
+  useEffect(() => {
+    setLvdDateRange(defaultLvdDateRange);
+  }, [defaultLvdDateRange]);
+
+  const toggleTableSort = (key: CarePlanTableSortKey) => {
+    setTableSort((prev) => {
+      if (prev?.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+
+  const pathwayCarePathGroups = useMemo(
+    () => buildPathwayCarePathFilterGroups(patientLinks),
+    [patientLinks]
+  );
   const icLeadOptions = useMemo(() => {
     const set = new Set<string>();
     for (const link of patientLinks) {
-      if (!matchesMultiFilter(pathwayFilter, link.pathway, pathwayOptions)) continue;
+      if (!linkMatchesPathwayCarePathScope(link, pathwayCarePathFilter, pathwayCarePathGroups)) {
+        continue;
+      }
       if (link.icLead) set.add(link.icLead);
     }
     return [...set].sort((a, b) => a.localeCompare(b));
-  }, [patientLinks, pathwayFilter, pathwayOptions]);
+  }, [patientLinks, pathwayCarePathFilter, pathwayCarePathGroups]);
+
+  useEffect(() => {
+    setPathwayCarePathFilter((current) => {
+      const pruned = prunePathwayCarePathFilterSelection(current, pathwayCarePathGroups);
+      return pruned === current ? current : pruned;
+    });
+  }, [pathwayCarePathGroups]);
 
   const hasActiveToolbarFilters =
     search.trim() !== '' ||
-    pathwayFilter !== null ||
-    carePathFilter !== null ||
+    isPathwayCarePathFilterActive(pathwayCarePathFilter) ||
     icLeadFilter !== null ||
-    lvdFilter !== 'all';
+    episodeConversionStatusFilter !== null ||
+    !lvdDateRangesEqual(lvdDateRange, defaultLvdDateRange);
 
   const toolbarScopedLinks = useMemo(
     () =>
@@ -562,24 +762,22 @@ export function CarePlanConversionPanel({
         matchesCarePlanToolbarFilters(
           link,
           search,
-          pathwayFilter,
-          carePathFilter,
+          pathwayCarePathFilter,
+          pathwayCarePathGroups,
           icLeadFilter,
-          lvdFilter,
-          pathwayOptions,
-          carePathOptions,
+          episodeConversionStatusFilter,
+          lvdDateRange,
           icLeadOptions
         )
       ),
     [
       patientLinks,
       search,
-      pathwayFilter,
-      carePathFilter,
+      pathwayCarePathFilter,
+      pathwayCarePathGroups,
       icLeadFilter,
-      lvdFilter,
-      pathwayOptions,
-      carePathOptions,
+      episodeConversionStatusFilter,
+      lvdDateRange,
       icLeadOptions,
     ]
   );
@@ -597,12 +795,11 @@ export function CarePlanConversionPanel({
           matchesCarePlanToolbarFilters(
             link,
             search,
-            pathwayFilter,
-            carePathFilter,
+            pathwayCarePathFilter,
+            pathwayCarePathGroups,
             icLeadFilter,
-            lvdFilter,
-            pathwayOptions,
-            carePathOptions,
+            episodeConversionStatusFilter,
+            lvdDateRange,
             icLeadOptions
           )
         ),
@@ -610,25 +807,24 @@ export function CarePlanConversionPanel({
       patientLinks,
       patientFilter,
       search,
-      pathwayFilter,
-      carePathFilter,
+      pathwayCarePathFilter,
+      pathwayCarePathGroups,
       icLeadFilter,
-      lvdFilter,
-      pathwayOptions,
-      carePathOptions,
+      episodeConversionStatusFilter,
+      lvdDateRange,
       icLeadOptions,
     ]
   );
 
-  const pendingPatientLinks = useMemo(
-    () => filteredPatientLinks.filter((link) => !link.carePlanCompletedAt),
-    [filteredPatientLinks]
-  );
+  const pendingPatientLinks = useMemo(() => {
+    const pending = filteredPatientLinks.filter((link) => !link.carePlanCompletedAt);
+    return tableSort ? sortCarePlanPatientLinks(pending, tableSort) : pending;
+  }, [filteredPatientLinks, tableSort]);
 
-  const completedPatientLinks = useMemo(
-    () => filteredPatientLinks.filter((link) => link.carePlanCompletedAt),
-    [filteredPatientLinks]
-  );
+  const completedPatientLinks = useMemo(() => {
+    const completed = filteredPatientLinks.filter((link) => link.carePlanCompletedAt);
+    return tableSort ? sortCarePlanPatientLinks(completed, tableSort) : completed;
+  }, [filteredPatientLinks, tableSort]);
 
   if (!hasCarePlanImports) {
     return (
@@ -695,7 +891,7 @@ export function CarePlanConversionPanel({
 
       {patientLinks.length > 0 && (
         <div className="hc-toolbar">
-          <label className="hc-search">
+          <label className="hc-search hc-search--care-plan">
             <input
               type="search"
               value={search}
@@ -704,24 +900,27 @@ export function CarePlanConversionPanel({
               aria-label="Search MRN, Pathway, IC Lead"
             />
           </label>
-          <div className="hc-toolbar-field hc-toolbar-field--pathway">
-            Pathway
+          <div className="hc-toolbar-field hc-toolbar-field--episode-conversion">
+            Conversion Status
             <ToolbarMultiSelect
-              options={pathwayOptions}
-              selected={pathwayFilter}
-              onChange={setPathwayFilter}
-              ariaLabel="Filter by pathway"
-              maxLabelsBeforeCount={3}
+              options={[...EPISODE_CONVERSION_STATUS_FILTER_OPTIONS]}
+              selected={episodeConversionStatusFilter}
+              onChange={setEpisodeConversionStatusFilter}
+              ariaLabel="Filter by conversion status"
+              maxLabelsBeforeCount={1}
+              formatOptionLabel={(value) =>
+                eligibilityReasonLabel(value as CarePlanEligibilityReason)
+              }
             />
           </div>
-          <div className="hc-toolbar-field">
-            Care Path
-            <ToolbarMultiSelect
-              options={carePathOptions}
-              selected={carePathFilter}
-              onChange={setCarePathFilter}
-              ariaLabel="Filter by care path"
-              maxLabelsBeforeCount={2}
+          <div className="hc-toolbar-field hc-toolbar-field--pathway">
+            Pathway
+            <ToolbarPathwayCarePathMultiSelect
+              groups={pathwayCarePathGroups}
+              selection={pathwayCarePathFilter}
+              onChange={setPathwayCarePathFilter}
+              ariaLabel="Filter by pathway and care path"
+              maxLabelsBeforeCount={3}
             />
           </div>
           <div className="hc-toolbar-field">
@@ -737,30 +936,25 @@ export function CarePlanConversionPanel({
           <div
             className="hc-toolbar-field hc-toolbar-field--lvd"
             role="group"
-            aria-label="Filter by LVD"
+            aria-label="Filter by LVD date range"
           >
             LVD
-            <span className="hc-toolbar-field-lvd-control">
-              <label className="hc-toolbar-field-lvd-option">
-                <input
-                  type="radio"
-                  name="care-plan-lvd-filter"
-                  value="all"
-                  checked={lvdFilter === 'all'}
-                  onChange={() => setLvdFilter('all')}
-                />
-                All
-              </label>
-              <label className="hc-toolbar-field-lvd-option">
-                <input
-                  type="radio"
-                  name="care-plan-lvd-filter"
-                  value="min_june_22"
-                  checked={lvdFilter === 'min_june_22'}
-                  onChange={() => setLvdFilter('min_june_22')}
-                />
-                ≥ 22 Jun 2026
-              </label>
+            <span className="hc-toolbar-lvd-range">
+              <ToolbarLvdDateInput
+                value={lvdDateRange.from}
+                max={lvdDateRange.to || undefined}
+                ariaLabel="LVD from date"
+                onChange={(from) => setLvdDateRange((prev) => ({ ...prev, from }))}
+              />
+              <span className="hc-toolbar-lvd-range-sep" aria-hidden>
+                –
+              </span>
+              <ToolbarLvdDateInput
+                value={lvdDateRange.to}
+                min={lvdDateRange.from || undefined}
+                ariaLabel="LVD to date"
+                onChange={(to) => setLvdDateRange((prev) => ({ ...prev, to }))}
+              />
             </span>
           </div>
           {hasActiveToolbarFilters && (
@@ -769,10 +963,10 @@ export function CarePlanConversionPanel({
               className="hc-btn hc-btn-secondary hc-toolbar-clear"
               onClick={() => {
                 setSearch('');
-                setPathwayFilter(null);
-                setCarePathFilter(null);
+                setPathwayCarePathFilter(PATHWAY_CARE_PATH_FILTER_ALL);
                 setIcLeadFilter(null);
-                setLvdFilter('all');
+                setEpisodeConversionStatusFilter(null);
+                setLvdDateRange(defaultLvdDateRange);
               }}
             >
               Clear Filters
@@ -793,6 +987,8 @@ export function CarePlanConversionPanel({
         <CarePlanPatientsTable
           links={pendingPatientLinks}
           mode="pending"
+          tableSort={tableSort}
+          onToggleTableSort={toggleTableSort}
           updatingRecordId={updatingRecordId}
           onOpenRows={setSelectedPatientCarePlans}
           onToggleCarePlanCompleted={onToggleCarePlanCompleted}
@@ -816,6 +1012,8 @@ export function CarePlanConversionPanel({
             <CarePlanPatientsTable
               links={completedPatientLinks}
               mode="completed"
+              tableSort={tableSort}
+              onToggleTableSort={toggleTableSort}
               updatingRecordId={updatingRecordId}
               onOpenRows={setSelectedPatientCarePlans}
               onToggleCarePlanCompleted={onToggleCarePlanCompleted}

@@ -1,8 +1,9 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-
-const MENU_VIEWPORT_MARGIN_PX = 8;
-const MENU_TRIGGER_GAP_PX = 4;
-const MENU_MIN_HEIGHT_PX = 120;
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import {
+  useToolbarMultiselectDismiss,
+  useToolbarMultiselectFloatingMenu,
+} from './useToolbarMultiselectFloatingMenu';
 
 type ToolbarMultiSelectProps = {
   options: readonly string[];
@@ -63,53 +64,14 @@ export function ToolbarMultiSelect({
   const allSelected = isAllSelected(selected, options);
   const someSelected = !allSelected && effectiveSelected.length > 0;
 
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (event: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', onPointerDown);
-    return () => document.removeEventListener('mousedown', onPointerDown);
-  }, [open]);
+  useToolbarMultiselectDismiss(open, rootRef, menuRef, () => setOpen(false));
+  useToolbarMultiselectFloatingMenu(open, rootRef, menuRef, [options.length]);
 
   useEffect(() => {
     if (selectAllRef.current) {
       selectAllRef.current.indeterminate = someSelected;
     }
   }, [someSelected, open]);
-
-  useLayoutEffect(() => {
-    if (!open) return;
-
-    const updateMenuMaxHeight = () => {
-      const root = rootRef.current;
-      const menu = menuRef.current;
-      if (!root || !menu) return;
-
-      const trigger = root.querySelector<HTMLElement>('.hc-toolbar-multiselect-trigger');
-      if (!trigger) return;
-
-      const spaceBelow =
-        window.innerHeight -
-        trigger.getBoundingClientRect().bottom -
-        MENU_VIEWPORT_MARGIN_PX -
-        MENU_TRIGGER_GAP_PX;
-      menu.style.maxHeight = `${Math.max(MENU_MIN_HEIGHT_PX, spaceBelow)}px`;
-    };
-
-    updateMenuMaxHeight();
-    window.addEventListener('resize', updateMenuMaxHeight);
-    window.addEventListener('scroll', updateMenuMaxHeight, true);
-
-    return () => {
-      window.removeEventListener('resize', updateMenuMaxHeight);
-      window.removeEventListener('scroll', updateMenuMaxHeight, true);
-      const menu = menuRef.current;
-      if (menu) menu.style.maxHeight = '';
-    };
-  }, [open, options.length]);
 
   const summary = useMemo(() => {
     if (allSelected) return 'All';
@@ -166,35 +128,37 @@ export function ToolbarMultiSelect({
           </svg>
         </span>
       </button>
-      {open && (
-        <div
-          ref={menuRef}
-          className="hc-toolbar-multiselect-menu"
-          role="listbox"
-          aria-label={ariaLabel}
-          aria-multiselectable
-        >
-          <label className="hc-toolbar-multiselect-option">
-            <input
-              ref={selectAllRef}
-              type="checkbox"
-              checked={allSelected}
-              onChange={toggleSelectAll}
-            />
-            <span>{selectAllLabel}</span>
-          </label>
-          {options.map((option) => (
-            <label key={option} className="hc-toolbar-multiselect-option">
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="hc-toolbar-multiselect-menu hc-toolbar-multiselect-menu--floating"
+            role="listbox"
+            aria-label={ariaLabel}
+            aria-multiselectable
+          >
+            <label className="hc-toolbar-multiselect-option">
               <input
+                ref={selectAllRef}
                 type="checkbox"
-                checked={effectiveSelected.includes(option)}
-                onChange={() => toggle(option)}
+                checked={allSelected}
+                onChange={toggleSelectAll}
               />
-              <span>{formatOptionLabel(option)}</span>
+              <span>{selectAllLabel}</span>
             </label>
-          ))}
-        </div>
-      )}
+            {options.map((option) => (
+              <label key={option} className="hc-toolbar-multiselect-option">
+                <input
+                  type="checkbox"
+                  checked={effectiveSelected.includes(option)}
+                  onChange={() => toggle(option)}
+                />
+                <span>{formatOptionLabel(option)}</span>
+              </label>
+            ))}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
