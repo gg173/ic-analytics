@@ -377,6 +377,58 @@
   margin-bottom: 0.75rem;
 }
 
+.hc-care-plan-conversion .hc-toolbar .hc-toolbar-field--pathway {
+  flex: 0.9 1 0;
+  max-width: 11.5rem;
+}
+
+.hc-care-plan-conversion .hc-toolbar .hc-toolbar-field--lvd {
+  flex: 0 0 auto;
+  width: max-content;
+  min-width: max-content;
+  overflow: visible;
+  white-space: nowrap;
+}
+
+.hc-care-plan-conversion .hc-toolbar .hc-toolbar-field--lvd .hc-toolbar-field-lvd-control {
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  align-items: center;
+  width: max-content;
+  gap: 0.85rem;
+  height: 100%;
+  margin-left: 0.5rem;
+  padding: 0 0.4rem;
+  border-left: 1px solid #e2e8f0;
+  white-space: nowrap;
+  overflow: visible;
+}
+
+.hc-care-plan-conversion .hc-toolbar .hc-toolbar-field-lvd-option {
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-flow: row nowrap;
+  align-items: center;
+  gap: 0.15rem;
+  font-size: 0.6rem;
+  font-weight: 500;
+  color: #1d4ed8;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.hc-care-plan-conversion .hc-toolbar .hc-toolbar-field--lvd input[type='radio'] {
+  margin: 0;
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 .hc-care-plan-conversion .hc-progress-reconcile-summary .hc-reconcile-stat {
   padding: 0.5rem 0.625rem;
   min-width: 0;
@@ -438,7 +490,12 @@
 
 .hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-ic-lead,
 .hc-care-plan-conversion .hc-table--care-plan-patients col.hc-care-plan-col-ic-lead {
-  width: 32%;
+  width: 14%;
+}
+
+.hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-hosp-dc,
+.hc-care-plan-conversion .hc-table--care-plan-patients col.hc-care-plan-col-hosp-dc {
+  width: 7.5rem;
 }
 
 .hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-plan,
@@ -451,7 +508,14 @@
   width: 9.5rem;
 }
 
-.hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-latest {
+.hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-lvd,
+.hc-care-plan-conversion .hc-table--care-plan-patients col.hc-care-plan-col-lvd {
+  width: 7.5rem;
+}
+
+.hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-hosp-dc,
+.hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-latest,
+.hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-lvd {
   white-space: nowrap;
 }
 
@@ -485,7 +549,12 @@
   text-overflow: ellipsis;
 }
 
-.hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-ic-lead,
+.hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-ic-lead {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-eligibility {
   white-space: normal;
   word-break: break-word;
@@ -498,7 +567,7 @@
 
 .hc-care-plan-conversion .hc-table--care-plan-patients-completed col.hc-care-plan-col-ic-lead,
 .hc-care-plan-conversion .hc-table--care-plan-patients-completed .hc-care-plan-col-ic-lead {
-  width: 10rem;
+  width: 7rem;
 }
 
 .hc-care-plan-conversion .hc-table--care-plan-patients-completed col.hc-care-plan-col-care-plan-status,

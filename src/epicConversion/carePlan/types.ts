@@ -60,6 +60,8 @@ export interface CarePlanPatientLink {
   carePath: string | null;
   icLead: string | null;
   hospDcDate: string | null;
+  /** Last visit date from VHA SSDB enrolment data. */
+  lvd: string | null;
   eligibilityReasons: CarePlanEligibilityReason[];
   carePlanCompletedBy: string | null;
   carePlanCompletedAt: string | null;

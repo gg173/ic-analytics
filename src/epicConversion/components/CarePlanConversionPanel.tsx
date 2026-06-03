@@ -5,6 +5,7 @@ import {
   eligibilityReasonLabel,
   getLatestCarePlanRow,
   isCarePlanDateStale,
+  isLvdOnOrAfterCarePlanToolbarMin,
   patientNeedsCarePlanUpdate,
   recordHasTemplatedCarePlan,
   summarizeCarePlanLinks,
@@ -15,6 +16,8 @@ import type {
   CarePlanPatientFilter,
   CarePlanPatientLink,
 } from '../carePlan/types';
+
+type CarePlanLvdFilter = 'all' | 'min_june_22';
 import type { EpicConversionRecord } from '../types';
 import { AttachmentIcon } from './CarePlanRowDetailModal';
 import { CarePlanRowsListModal } from './CarePlanRowsListModal';
@@ -38,6 +41,7 @@ function matchesCarePlanToolbarFilters(
   pathwayFilter: string[] | null,
   carePathFilter: string[] | null,
   icLeadFilter: string[] | null,
+  lvdFilter: CarePlanLvdFilter,
   pathwayOptions: readonly string[],
   carePathOptions: readonly string[],
   icLeadOptions: readonly string[]
@@ -45,6 +49,7 @@ function matchesCarePlanToolbarFilters(
   if (!matchesMultiFilter(pathwayFilter, link.pathway, pathwayOptions)) return false;
   if (!matchesMultiFilter(carePathFilter, link.carePath, carePathOptions)) return false;
   if (!matchesMultiFilter(icLeadFilter, link.icLead, icLeadOptions)) return false;
+  if (lvdFilter === 'min_june_22' && !isLvdOnOrAfterCarePlanToolbarMin(link.lvd)) return false;
   const q = search.trim().toLowerCase();
   if (!q) return true;
   return (
@@ -102,6 +107,17 @@ function RedFlagIcon() {
   );
 }
 
+function formatSsdbDate(value: string | null | undefined): string {
+  if (!value?.trim()) return '—';
+  const d = new Date(`${value.trim()}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString('en-US', {
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+  });
+}
+
 function formatCarePlanCompletedAt(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
@@ -132,7 +148,7 @@ function CarePlanConversionStatusCell({
             type="radio"
             name={`care-plan-status-${recordId}`}
             className="hc-status-radio"
-            checked={false}
+            checked
             disabled={disabled}
             readOnly
           />
@@ -214,8 +230,10 @@ function CarePlanPatientsTable({
           <col className="hc-care-plan-col-gcn" />
           <col className="hc-care-plan-col-pathway" />
           <col className="hc-care-plan-col-ic-lead" />
+          <col className="hc-care-plan-col-hosp-dc" />
           <col className="hc-care-plan-col-plan" />
           <col className="hc-care-plan-col-latest" />
+          <col className="hc-care-plan-col-lvd" />
           {isPending && <col className="hc-care-plan-col-eligibility" />}
           <col className="hc-care-plan-col-care-plan-status" />
         </colgroup>
@@ -225,8 +243,10 @@ function CarePlanPatientsTable({
             <th>GC #</th>
             <th>Pathway</th>
             <th>IC Lead</th>
+            <th>Hospital DC Date</th>
             <th>Care Plan</th>
             <th>Latest Care Plan Date</th>
+            <th>LVD</th>
             {isPending && <th>Episode Conversion Status</th>}
             <th>Care Plan Conversion Status</th>
           </tr>
@@ -242,12 +262,14 @@ function CarePlanPatientsTable({
                 <td className="hc-care-plan-col-gcn">{link.gcn ?? '—'}</td>
                 <td className="hc-care-plan-col-pathway">{link.pathway ?? '—'}</td>
                 <td className="hc-care-plan-col-ic-lead">{link.icLead ?? '—'}</td>
+                <td className="hc-care-plan-col-hosp-dc">{formatSsdbDate(link.hospDcDate)}</td>
                 <td className="hc-care-plan-col-plan">
                   <CarePlanCell link={link} onOpenRows={onOpenRows} />
                 </td>
                 <td className="hc-care-plan-col-latest">
                   <LatestCarePlanDateCell dateSaved={latestCarePlan?.dateSaved} />
                 </td>
+                <td className="hc-care-plan-col-lvd">{formatSsdbDate(link.lvd)}</td>
                 {isPending && (
                   <td className="hc-care-plan-col-eligibility">
                     {link.eligibilityReasons.length
@@ -504,6 +526,7 @@ export function CarePlanConversionPanel({
   const [pathwayFilter, setPathwayFilter] = useState<string[] | null>(null);
   const [carePathFilter, setCarePathFilter] = useState<string[] | null>(null);
   const [icLeadFilter, setIcLeadFilter] = useState<string[] | null>(null);
+  const [lvdFilter, setLvdFilter] = useState<CarePlanLvdFilter>('all');
 
   const pathwayOptions = useMemo(
     () => distinctLinkOptions(patientLinks, (link) => link.pathway),
@@ -530,7 +553,8 @@ export function CarePlanConversionPanel({
     search.trim() !== '' ||
     pathwayFilter !== null ||
     carePathFilter !== null ||
-    icLeadFilter !== null;
+    icLeadFilter !== null ||
+    lvdFilter !== 'all';
 
   const toolbarScopedLinks = useMemo(
     () =>
@@ -541,6 +565,7 @@ export function CarePlanConversionPanel({
           pathwayFilter,
           carePathFilter,
           icLeadFilter,
+          lvdFilter,
           pathwayOptions,
           carePathOptions,
           icLeadOptions
@@ -552,6 +577,7 @@ export function CarePlanConversionPanel({
       pathwayFilter,
       carePathFilter,
       icLeadFilter,
+      lvdFilter,
       pathwayOptions,
       carePathOptions,
       icLeadOptions,
@@ -574,6 +600,7 @@ export function CarePlanConversionPanel({
             pathwayFilter,
             carePathFilter,
             icLeadFilter,
+            lvdFilter,
             pathwayOptions,
             carePathOptions,
             icLeadOptions
@@ -586,6 +613,7 @@ export function CarePlanConversionPanel({
       pathwayFilter,
       carePathFilter,
       icLeadFilter,
+      lvdFilter,
       pathwayOptions,
       carePathOptions,
       icLeadOptions,
@@ -676,7 +704,7 @@ export function CarePlanConversionPanel({
               aria-label="Search MRN, Pathway, IC Lead"
             />
           </label>
-          <div className="hc-toolbar-field">
+          <div className="hc-toolbar-field hc-toolbar-field--pathway">
             Pathway
             <ToolbarMultiSelect
               options={pathwayOptions}
@@ -706,6 +734,35 @@ export function CarePlanConversionPanel({
               maxLabelsBeforeCount={1}
             />
           </div>
+          <div
+            className="hc-toolbar-field hc-toolbar-field--lvd"
+            role="group"
+            aria-label="Filter by LVD"
+          >
+            LVD
+            <span className="hc-toolbar-field-lvd-control">
+              <label className="hc-toolbar-field-lvd-option">
+                <input
+                  type="radio"
+                  name="care-plan-lvd-filter"
+                  value="all"
+                  checked={lvdFilter === 'all'}
+                  onChange={() => setLvdFilter('all')}
+                />
+                All
+              </label>
+              <label className="hc-toolbar-field-lvd-option">
+                <input
+                  type="radio"
+                  name="care-plan-lvd-filter"
+                  value="min_june_22"
+                  checked={lvdFilter === 'min_june_22'}
+                  onChange={() => setLvdFilter('min_june_22')}
+                />
+                ≥ 22 Jun 2026
+              </label>
+            </span>
+          </div>
           {hasActiveToolbarFilters && (
             <button
               type="button"
@@ -715,6 +772,7 @@ export function CarePlanConversionPanel({
                 setPathwayFilter(null);
                 setCarePathFilter(null);
                 setIcLeadFilter(null);
+                setLvdFilter('all');
               }}
             >
               Clear Filters

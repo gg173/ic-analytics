@@ -152,6 +152,7 @@ export function buildCarePlanPatientLinks(
       carePath: record.care_path,
       icLead: record.ic_lead,
       hospDcDate: record.hosp_dc_date,
+      lvd: record.lvd,
       eligibilityReasons,
       carePlanCompletedBy: record.care_plan_completed_by,
       carePlanCompletedAt: record.care_plan_completed_at,
@@ -193,6 +194,16 @@ export function getLatestCarePlanRow(link: CarePlanPatientLink): LinkedCarePlanR
 
 /** Start of 19 May 2026 (local). Latest care plan before this date needs an update. */
 export const CARE_PLAN_UPDATE_REQUIRED_BEFORE_MS = new Date(2026, 4, 19).getTime();
+
+/** Start of 22 June 2026 (local). Care plan conversion toolbar LVD minimum. */
+export const CARE_PLAN_LVD_FILTER_MIN_MS = new Date(2026, 5, 22).getTime();
+
+export function isLvdOnOrAfterCarePlanToolbarMin(lvd: string | null | undefined): boolean {
+  if (!lvd?.trim()) return false;
+  const parsed = Date.parse(`${lvd.trim()}T12:00:00`);
+  if (Number.isNaN(parsed)) return false;
+  return parsed >= CARE_PLAN_LVD_FILTER_MIN_MS;
+}
 
 export function isCarePlanDateStale(dateSaved: string | null | undefined): boolean {
   if (!dateSaved?.trim()) return false;
