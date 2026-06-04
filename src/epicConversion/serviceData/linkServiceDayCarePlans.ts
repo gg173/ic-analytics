@@ -154,6 +154,7 @@ export type SsdbServiceDayRow = Pick<
   | 'srv_date'
   | 'enroll_id'
   | 'mrn'
+  | 'pathway'
   | 'srv_discipline'
   | 'srv_delivery_mode'
 >;

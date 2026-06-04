@@ -33,6 +33,12 @@ import {
   computeTemplatedCarePlanPercentByServiceDay,
   computeTemplatedCarePlanPercentByServiceWeek,
 } from '../epicConversion/serviceData/linkServiceDayCarePlans';
+import {
+  aggregateSsdbServiceDayRows,
+  buildRecordByEnrollId,
+  hasActiveServiceDayPatientFilter,
+  ssdbServiceRowMatchesPatientFilter,
+} from '../epicConversion/serviceData/filterServiceDayPatient';
 import { DownloadDataIcon } from '../epicConversion/components/DownloadDataIcon';
 import { TableExportButton } from '../epicConversion/components/TableExportButton';
 import {
@@ -1004,7 +1010,21 @@ export function EpicConversionPage() {
 
   const fetchServiceDataDailyCountsWithCarePlanLink = useCallback(
     async (startDate: string, endDate: string) => {
-      const counts = await fetchServiceDataDailyCountsForDateRange(startDate, endDate);
+      const rawCounts = await fetchServiceDataDailyCountsForDateRange(startDate, endDate);
+      const recordByEnrollId = buildRecordByEnrollId(records);
+      const counts = hasActiveServiceDayPatientFilter(search, icLeadFilter)
+        ? aggregateSsdbServiceDayRows(
+            rawCounts.ssdbServiceRows.filter((row) =>
+              ssdbServiceRowMatchesPatientFilter(
+                row,
+                recordByEnrollId,
+                search,
+                icLeadFilter,
+                icLeadOptions
+              )
+            )
+          )
+        : rawCounts;
       const templatedCarePlanPercentByDate =
         carePlanImports.length > 0
           ? computeTemplatedCarePlanPercentByServiceDay(
@@ -1062,10 +1082,18 @@ export function EpicConversionPage() {
         templatedCarePlanCountByWeekStart,
         patientsByDate,
         services,
-        error: counts.error,
+        error: rawCounts.error,
       };
     },
-    [fetchServiceDataDailyCountsForDateRange, carePlanImports.length, records, carePlanRows]
+    [
+      fetchServiceDataDailyCountsForDateRange,
+      carePlanImports.length,
+      records,
+      carePlanRows,
+      search,
+      icLeadFilter,
+      icLeadOptions,
+    ]
   );
 
   const { patientLinks: carePlanPatientLinks, summary: carePlanSummary } =
@@ -2194,7 +2222,14 @@ export function EpicConversionPage() {
           fetchDailyCountsForDateRange={fetchServiceDataDailyCountsWithCarePlanLink}
           fetchMonthHasServices={fetchServiceDataMonthHasServices}
           hasCarePlanImports={carePlanImports.length > 0}
+          search={search}
+          onSearchChange={setSearch}
+          icLeadFilter={icLeadFilter}
+          onIcLeadFilterChange={setIcLeadFilter}
+          icLeadOptions={icLeadOptions}
           refreshKey={[
+            search,
+            icLeadFilter === null ? 'all' : icLeadFilter.join('\u001f'),
             ...serviceDataImports.map(
               (imp) => `${imp.id}:${imp.imported_at}:${imp.row_count}`
             ),

@@ -17,6 +17,7 @@ import {
   type ServiceDayService,
 } from '../serviceData/linkServiceDayCarePlans';
 import { TableExportButton } from './TableExportButton';
+import { ToolbarMultiSelect } from './ToolbarMultiSelect';
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
 
@@ -542,6 +543,11 @@ interface ServiceDataCalendarProps {
   ) => Promise<{ hasServices: boolean; error: string | null }>;
   hasCarePlanImports?: boolean;
   refreshKey?: string;
+  search: string;
+  onSearchChange: (value: string) => void;
+  icLeadFilter: string[] | null;
+  onIcLeadFilterChange: (value: string[] | null) => void;
+  icLeadOptions: readonly string[];
 }
 
 export function ServiceDataCalendar({
@@ -549,6 +555,11 @@ export function ServiceDataCalendar({
   fetchMonthHasServices,
   hasCarePlanImports = false,
   refreshKey = '',
+  search,
+  onSearchChange,
+  icLeadFilter,
+  onIcLeadFilterChange,
+  icLeadOptions,
 }: ServiceDataCalendarProps) {
   const today = useMemo(() => new Date(), []);
   const [visibleYear, setVisibleYear] = useState(today.getFullYear());
@@ -740,25 +751,52 @@ export function ServiceDataCalendar({
     >
     <div className="hc-service-data-calendar" aria-label="SSDB service data calendar">
       <div className="hc-service-data-calendar-nav">
-        <button
-          type="button"
-          className="hc-service-data-calendar-nav-btn"
-          onClick={goToPreviousMonth}
-          disabled={prevMonthHasServices === false}
-          aria-label={`Previous month, ${previousMonthLabel}`}
-        >
-          <ChevronLeftIcon />
-        </button>
-        <h2 className="hc-service-data-calendar-month">{monthLabel}</h2>
-        <button
-          type="button"
-          className="hc-service-data-calendar-nav-btn"
-          onClick={goToNextMonth}
-          disabled={nextMonthHasServices === false}
-          aria-label={`Next month, ${nextMonthLabel}`}
-        >
-          <ChevronRightIcon />
-        </button>
+        <div
+          className="hc-toolbar hc-service-data-calendar-nav-filters hc-service-data-calendar-nav-filters--start"
+          aria-hidden
+        />
+        <div className="hc-service-data-calendar-nav-center">
+          <button
+            type="button"
+            className="hc-service-data-calendar-nav-btn"
+            onClick={goToPreviousMonth}
+            disabled={prevMonthHasServices === false}
+            aria-label={`Previous month, ${previousMonthLabel}`}
+          >
+            <ChevronLeftIcon />
+          </button>
+          <h2 className="hc-service-data-calendar-month">{monthLabel}</h2>
+          <button
+            type="button"
+            className="hc-service-data-calendar-nav-btn"
+            onClick={goToNextMonth}
+            disabled={nextMonthHasServices === false}
+            aria-label={`Next month, ${nextMonthLabel}`}
+          >
+            <ChevronRightIcon />
+          </button>
+        </div>
+        <div className="hc-toolbar hc-service-data-calendar-nav-filters hc-service-data-calendar-nav-filters--end">
+          <label className="hc-search">
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search MRN, Pathway, IC Lead"
+              aria-label="Search MRN, Pathway, IC Lead"
+            />
+          </label>
+          <div className="hc-toolbar-field">
+            IC Lead
+            <ToolbarMultiSelect
+              options={icLeadOptions}
+              selected={icLeadFilter}
+              onChange={onIcLeadFilterChange}
+              ariaLabel="Filter by IC lead"
+              maxLabelsBeforeCount={1}
+            />
+          </div>
+        </div>
       </div>
 
       <div
