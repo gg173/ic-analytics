@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode } from 'react';
 import {
   carePlanContentKindLabel,
-  EPIC_CONVERSION_TEMPLATE_MARKERS,
+  EPIC_CONVERSION_TEMPLATE_MARKER_PATTERNS,
   type CarePlanContentKind,
 } from './classifyCarePlanContent';
 import {
@@ -85,13 +85,13 @@ function insertNewlineBefore(text: string, label: string): string {
   return result + text.slice(lastIndex);
 }
 
-function insertNewlineAfter(text: string, marker: string): string {
-  const pattern = new RegExp(escapeRegExp(marker), 'gi');
+function insertNewlineAfterPattern(text: string, pattern: RegExp): string {
+  const globalPattern = withGlobalFlag(pattern);
   let result = '';
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
-  while ((match = pattern.exec(text)) !== null) {
+  while ((match = globalPattern.exec(text)) !== null) {
     const index = match.index;
     const afterMarker = index + match[0].length;
     result += text.slice(lastIndex, afterMarker);
@@ -106,8 +106,8 @@ function insertNewlineAfter(text: string, marker: string): string {
 
 export function formatTemplatedCarePlanText(text: string): string {
   let formatted = text;
-  for (const marker of EPIC_CONVERSION_TEMPLATE_MARKERS) {
-    formatted = insertNewlineAfter(formatted, marker);
+  for (const pattern of EPIC_CONVERSION_TEMPLATE_MARKER_PATTERNS) {
+    formatted = insertNewlineAfterPattern(formatted, pattern);
   }
   for (const label of TEMPLATED_BREAK_BEFORE) {
     formatted = insertNewlineBefore(formatted, label);

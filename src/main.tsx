@@ -8,9 +8,8 @@ import { HomecareLayout } from './pages/HomecareLayout';
 import { LoginPage } from './pages/LoginPage';
 import { ProtectedHomecareRoute } from './pages/ProtectedHomecareRoute';
 import { ProtectedModuleRoute } from './pages/ProtectedModuleRoute';
-import { HomecareBatchesPage } from './pages/HomecareBatchesPage';
-import { HomecareWorkstationPage } from './pages/HomecareWorkstationPage';
-import { HomecareAdminPage } from './pages/HomecareAdminPage';
+import { IMPORT_DATA_TAB } from './homecare/billingTabs';
+import { HomecareBillingPage } from './pages/HomecareBillingPage';
 import { EpicConversionPage } from './pages/EpicConversionPage';
 import { EpicConversionAdminPage } from './pages/EpicConversionAdminPage';
 import { EpicConversionMapsProvider } from './epicConversion/context/EpicConversionMapsProvider';
@@ -32,9 +31,15 @@ createRoot(document.getElementById('root')!).render(
             <Route path="login" element={<Navigate to="/" replace />} />
             <Route element={<ProtectedHomecareRoute />}>
               <Route element={<ProtectedModuleRoute module="homecare" />}>
-                <Route index element={<HomecareBatchesPage />} />
-                <Route path="batches/:batchId" element={<HomecareWorkstationPage />} />
-                <Route path="admin" element={<HomecareAdminPage />} />
+                <Route index element={<HomecareBillingPage />} />
+                <Route
+                  path="admin"
+                  element={<Navigate to="/homecare" replace />}
+                />
+                <Route
+                  path="batches/:batchId"
+                  element={<Navigate to="/homecare" state={{ tab: IMPORT_DATA_TAB }} replace />}
+                />
               </Route>
             </Route>
           </Route>

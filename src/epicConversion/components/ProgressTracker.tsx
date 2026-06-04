@@ -226,6 +226,7 @@ interface ProgressTrackerProps {
   unifiedImportActivity: UnifiedImportActivityRow[];
   uploaderByUserId: Map<string, BatchUploader>;
   reportUploaderByUserId: Map<string, BatchUploader>;
+  carePlanUploaderByUserId: Map<string, BatchUploader>;
   onNavigateToStrategy?: (strategy: string) => void;
   onNavigateToCarePlan?: () => void;
 }
@@ -233,10 +234,14 @@ interface ProgressTrackerProps {
 function resolveUploaderName(
   importedBy: string | null,
   ssdbUploaders: Map<string, BatchUploader>,
-  epicUploaders: Map<string, BatchUploader>
+  epicUploaders: Map<string, BatchUploader>,
+  emriUploaders: Map<string, BatchUploader>
 ): string {
   if (!importedBy) return 'Unknown';
-  const profile = ssdbUploaders.get(importedBy) ?? epicUploaders.get(importedBy);
+  const profile =
+    ssdbUploaders.get(importedBy) ??
+    epicUploaders.get(importedBy) ??
+    emriUploaders.get(importedBy);
   return uploaderLabel(profile);
 }
 
@@ -247,6 +252,7 @@ export function ProgressTracker({
   unifiedImportActivity,
   uploaderByUserId,
   reportUploaderByUserId,
+  carePlanUploaderByUserId,
   onNavigateToStrategy,
   onNavigateToCarePlan,
 }: ProgressTrackerProps) {
@@ -349,7 +355,7 @@ export function ProgressTracker({
                 {unifiedImportActivity.length === 0 ? (
                   <tr>
                     <td colSpan={3} className="hc-muted">
-                      No SSDB or Epic uploads yet.
+                      No SSDB, Epic, or EMRI uploads yet.
                     </td>
                   </tr>
                 ) : (
@@ -357,7 +363,8 @@ export function ProgressTracker({
                     const uploaderName = resolveUploaderName(
                       row.importedBy,
                       uploaderByUserId,
-                      reportUploaderByUserId
+                      reportUploaderByUserId,
+                      carePlanUploaderByUserId
                     );
                     return (
                       <tr key={`${row.type}-${row.filename}-${row.importedAt}`}>

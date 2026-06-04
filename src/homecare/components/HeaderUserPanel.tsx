@@ -33,9 +33,7 @@ export function HeaderUserPanel() {
     user,
     organization,
     signOut,
-    canManageHomecareRules,
     canManageEpicIclMaps,
-    canAccessHomecare,
     isAppAdmin,
   } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -105,16 +103,6 @@ export function HeaderUserPanel() {
                   onClick={() => setMenuOpen(false)}
                 >
                   Epic mappings
-                </Link>
-              )}
-              {canManageHomecareRules && canAccessHomecare && (
-                <Link
-                  to="/homecare/admin"
-                  className="hc-header-user-menu-item"
-                  role="menuitem"
-                  onClick={() => setMenuOpen(false)}
-                >
-                  Billing rules
                 </Link>
               )}
               {isAppAdmin && (

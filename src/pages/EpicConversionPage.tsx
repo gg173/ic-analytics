@@ -1,23 +1,40 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEpicConversionMapsContextOptional } from '../epicConversion/context/EpicConversionMapsProvider';
 import { parseEpicConversionXlsxBuffer } from '../epicConversion/ingest/parseEpicConversionXlsx';
 import { useEpicConversionRecords } from '../epicConversion/hooks/useEpicConversionRecords';
 import { useEpicConversionReports } from '../epicConversion/hooks/useEpicConversionReports';
 import { useEpicCarePlanImports } from '../epicConversion/hooks/useEpicCarePlanImports';
+import { useEpicSsdbServiceImports } from '../epicConversion/hooks/useEpicSsdbServiceImports';
 import { ConversionDiscrepanciesPanel } from '../epicConversion/components/ConversionDiscrepanciesPanel';
-import { computeCarePlanProgressMetrics } from '../epicConversion/carePlan/linkCarePlans';
+import {
+  buildCarePlanPatientLinks,
+  computeCarePlanProgressMetrics,
+  findCompletedRecordIdsNeedingCarePlanRecheck,
+} from '../epicConversion/carePlan/linkCarePlans';
 import {
   CarePlanConversionPanel,
   useCarePlanConversionData,
 } from '../epicConversion/components/CarePlanConversionPanel';
 import {
-  EnrolmentUploadDialog,
-  type EnrolmentUploadDialogPhase,
-} from '../epicConversion/components/EnrolmentUploadDialog';
-import {
-  UploadProcessingOverlay,
-  type UploadProcessingOverlayPhase,
-} from '../epicConversion/components/UploadProcessingOverlay';
+  ConsolidatedImportUploadDialog,
+  IMPORT_DOCUMENT_TYPE_LABELS,
+  type ConsolidatedImportFiles,
+  type ConsolidatedImportKind,
+} from '../epicConversion/components/ConsolidatedImportUploadDialog';
+import type { ImportUploadDialogPhase } from '../epicConversion/components/EnrolmentUploadDialog';
+import { SsdbEnrolmentHowtoModal } from '../epicConversion/components/SsdbEnrolmentHowtoModal';
 import { ProgressTracker } from '../epicConversion/components/ProgressTracker';
+import { ServiceDataCalendar } from '../epicConversion/components/ServiceDataCalendar';
+import {
+  computeServiceDayPatientsByDate,
+  computeServiceDayServices,
+  computeTemplatedCarePlanCountByServiceDay,
+  computeTemplatedCarePlanCountByServiceWeek,
+  computeTemplatedCarePlanPercentByServiceDay,
+  computeTemplatedCarePlanPercentByServiceWeek,
+} from '../epicConversion/serviceData/linkServiceDayCarePlans';
+import { DownloadDataIcon } from '../epicConversion/components/DownloadDataIcon';
+import { TableExportButton } from '../epicConversion/components/TableExportButton';
 import {
   buildEpicSnapshotByMatchedRecordId,
   buildEpicValidationStatusByRecordId,
@@ -52,8 +69,13 @@ import type {
 import { DISCHARGE_REASONS } from '../epicConversion/types';
 import { ToolbarMultiSelect, matchesMultiFilter } from '../epicConversion/components/ToolbarMultiSelect';
 import { downloadEnrolmentImportXlsx } from '../epicConversion/export/buildEnrolmentXlsx';
+import { downloadSsdbServiceImportXlsx } from '../epicConversion/export/buildSsdbServiceImportXlsx';
+import { downloadCarePlanImportXlsx } from '../epicConversion/export/buildCarePlanImportXlsx';
 import { downloadEpicReportImportXlsx } from '../epicConversion/export/buildEpicReportXlsx';
-import { downloadSubmittedDischargesXlsx } from '../epicConversion/export/buildSubmittedDischargesXlsx';
+import {
+  downloadEpicConversionTableXlsx,
+  type EpicTableExportVariant,
+} from '../epicConversion/export/buildEpicConversionTableXlsx';
 import { useAuth } from '../homecare/hooks/useAuth';
 import { uploaderLabel } from '../homecare/hooks/useBatch';
 import type { BatchUploader } from '../homecare/types';
@@ -177,20 +199,38 @@ function strategyTabCountClassName(strategy: string): string {
   }
 }
 
-function formatImportUploadMeta(uploaderName: string, importedAt: string): string {
+function formatImportUploadedDateParts(
+  importedAt: string
+): { date: string; time: string } | null {
   const d = new Date(importedAt);
   if (Number.isNaN(d.getTime())) {
-    return `Uploaded by ${uploaderName} on ${importedAt}`;
+    return null;
   }
-  const date = d.toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-  const hours = d.getHours().toString().padStart(2, '0');
-  const minutes = d.getMinutes().toString().padStart(2, '0');
-  return `Uploaded by ${uploaderName} on ${date} at ${hours}:${minutes}`;
+  const weekday = d.toLocaleDateString('en-US', { weekday: 'short' });
+  const month = d.toLocaleDateString('en-US', { month: 'short' });
+  const day = d.getDate().toString().padStart(2, '0');
+  const year = d.getFullYear();
+  const time = d
+    .toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    })
+    .toLowerCase();
+  return { date: `${weekday} ${month} ${day}, ${year}`, time };
+}
+
+function ImportUploadedDateCell({ importedAt }: { importedAt: string }) {
+  const parts = formatImportUploadedDateParts(importedAt);
+  if (!parts) {
+    return <>{importedAt}</>;
+  }
+  return (
+    <div className="hc-import-uploaded-date">
+      <span className="hc-import-uploaded-date-day">{parts.date}</span>
+      <span className="hc-import-uploaded-date-time">{parts.time}</span>
+    </div>
+  );
 }
 
 function formatCompletedAt(iso: string): string {
@@ -287,6 +327,30 @@ function UploadDataIcon() {
   );
 }
 
+function TrashIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" aria-hidden>
+      <path d="M0 0h24v24H0z" fill="none" />
+      <path
+        fill="currentColor"
+        d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
+      />
+    </svg>
+  );
+}
+
+function RefreshIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="1.15em" height="1.15em" viewBox="0 0 24 24" aria-hidden>
+      <path d="M0 0h24v24H0z" fill="none" />
+      <path
+        fill="currentColor"
+        d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
+      />
+    </svg>
+  );
+}
+
 function sortLosCategoryOptions(options: string[]): string[] {
   return [...options].sort((a, b) => {
     const aOver = isOver90LosCategory(a);
@@ -331,6 +395,7 @@ function distinctOptions(
 const PROGRESS_TRACKER_TAB = 'Progress Tracker';
 const EPISODE_VALIDATION_TAB = 'Episode Validation';
 const CARE_PLAN_CONVERSION_TAB = 'Care Plan Conversion';
+const SERVICE_DATA_CONVERSION_TAB = 'Service Data Conversion';
 const UPLOAD_DATA_TAB = 'Import Data';
 
 function formatPathwayWithCarePath(r: EpicConversionRecord): string {
@@ -430,9 +495,11 @@ export function EpicConversionPage() {
     records,
     loading,
     error,
+    refresh: refreshRecords,
     insertRows,
     setCompletion,
     setCarePlanCompletion,
+    clearCarePlanCompletionForRecords,
     changeFromDischargePending,
     changeFromEpisodeConversionPending,
     setDischargeDetails,
@@ -455,6 +522,7 @@ export function EpicConversionPage() {
     loadUnifiedReconciliationDetails,
     recheckUnifiedReconciliation,
     recheckingUnified,
+    refreshReports,
     fetchReportRowsForImport,
     deleteReport,
   } = useEpicConversionReports(records);
@@ -462,30 +530,50 @@ export function EpicConversionPage() {
     imports: carePlanImports,
     carePlanRows,
     error: carePlanError,
+    refresh: refreshCarePlanImports,
     uploadCarePlan,
     deleteCarePlanImport,
+    fetchRowsForImport: fetchCarePlanRowsForImport,
   } = useEpicCarePlanImports();
+  const {
+    imports: serviceDataImports,
+    error: serviceDataError,
+    refresh: refreshServiceDataImports,
+    uploadServiceData,
+    deleteServiceImport,
+    fetchRowsForImport: fetchServiceDataRowsForImport,
+    fetchDailyCountsForDateRange: fetchServiceDataDailyCountsForDateRange,
+    fetchMonthHasServices: fetchServiceDataMonthHasServices,
+  } = useEpicSsdbServiceImports();
+  const epicMapsContext = useEpicConversionMapsContextOptional();
   const importActivity = useMemo(() => computeImportActivity(records), [records]);
   const unifiedImportActivity = useMemo(
-    () => buildUnifiedImportActivity(importActivity, reportImports, importSummariesById),
-    [importActivity, reportImports, importSummariesById]
+    () =>
+      buildUnifiedImportActivity(
+        importActivity,
+        reportImports,
+        importSummariesById,
+        carePlanImports,
+        carePlanRows
+      ),
+    [importActivity, reportImports, importSummariesById, carePlanImports, carePlanRows]
   );
-  const epicReportsFileRef = useRef<HTMLInputElement>(null);
-  const carePlanFileRef = useRef<HTMLInputElement>(null);
-  const [uploadingEnrolment, setUploadingEnrolment] = useState(false);
-  const [uploadingCarePlan, setUploadingCarePlan] = useState(false);
-  const [enrolmentDialogOpen, setEnrolmentDialogOpen] = useState(false);
-  const [enrolmentDialogPhase, setEnrolmentDialogPhase] =
-    useState<EnrolmentUploadDialogPhase>('form');
-  const [enrolmentDialogFile, setEnrolmentDialogFile] = useState<File | null>(null);
-  const [enrolmentDialogError, setEnrolmentDialogError] = useState<string | null>(null);
-  const [enrolmentDialogSuccessMessage, setEnrolmentDialogSuccessMessage] = useState<
-    string | null
-  >(null);
-  const [uploadingEpicReport, setUploadingEpicReport] = useState(false);
-  const [epicReportOverlayOpen, setEpicReportOverlayOpen] = useState(false);
-  const [epicReportOverlayPhase, setEpicReportOverlayPhase] =
-    useState<UploadProcessingOverlayPhase>('processing');
+  const [appReady, setAppReady] = useState(false);
+  const [refreshingAll, setRefreshingAll] = useState(false);
+  const [uploadingImport, setUploadingImport] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [ssdbHowtoOpen, setSsdbHowtoOpen] = useState(false);
+  const [importDialogPhase, setImportDialogPhase] = useState<ImportUploadDialogPhase>('form');
+  const [importDialogFiles, setImportDialogFiles] = useState<ConsolidatedImportFiles>({
+    enrolment: null,
+    serviceData: null,
+    carePlan: null,
+    epicReport: null,
+  });
+  const [importDialogError, setImportDialogError] = useState<string | null>(null);
+  const [importDialogSuccessMessage, setImportDialogSuccessMessage] = useState<string | null>(
+    null
+  );
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccessMessage, setUploadSuccessMessage] = useState<string | null>(null);
   const [epicReportError, setEpicReportError] = useState<string | null>(null);
@@ -623,6 +711,84 @@ export function EpicConversionPage() {
     );
   }, [records]);
 
+  type ConsolidatedImportRow = {
+    key: string;
+    kind: ConsolidatedImportKind;
+    documentType: string;
+    importedAt: string;
+    importedBy: string | null;
+    filename: string;
+    rowCount: number;
+    enrolmentKey?: { filename: string; importedAt: string; count: number };
+    serviceDataId?: string;
+    carePlanId?: string;
+    reportId?: string;
+  };
+
+  const consolidatedImports = useMemo(() => {
+    const rows: ConsolidatedImportRow[] = [];
+
+    for (const imp of imports) {
+      rows.push({
+        key: `enrolment-${imp.filename}-${imp.importedAt}`,
+        kind: 'enrolment',
+        documentType: IMPORT_DOCUMENT_TYPE_LABELS.enrolment,
+        importedAt: imp.importedAt,
+        importedBy: imp.importedBy,
+        filename: imp.filename,
+        rowCount: imp.count,
+        enrolmentKey: {
+          filename: imp.filename,
+          importedAt: imp.importedAt,
+          count: imp.count,
+        },
+      });
+    }
+
+    for (const imp of serviceDataImports) {
+      rows.push({
+        key: `serviceData-${imp.id}`,
+        kind: 'serviceData',
+        documentType: IMPORT_DOCUMENT_TYPE_LABELS.serviceData,
+        importedAt: imp.imported_at,
+        importedBy: imp.imported_by,
+        filename: imp.source_filename,
+        rowCount: imp.row_count,
+        serviceDataId: imp.id,
+      });
+    }
+
+    for (const imp of carePlanImports) {
+      rows.push({
+        key: `carePlan-${imp.id}`,
+        kind: 'carePlan',
+        documentType: IMPORT_DOCUMENT_TYPE_LABELS.carePlan,
+        importedAt: imp.imported_at,
+        importedBy: imp.imported_by,
+        filename: imp.source_filename,
+        rowCount: imp.row_count,
+        carePlanId: imp.id,
+      });
+    }
+
+    for (const imp of reportImports) {
+      rows.push({
+        key: `epicReport-${imp.id}`,
+        kind: 'epicReport',
+        documentType: IMPORT_DOCUMENT_TYPE_LABELS.epicReport,
+        importedAt: imp.imported_at,
+        importedBy: imp.imported_by,
+        filename: imp.source_filename,
+        rowCount: imp.row_count,
+        reportId: imp.id,
+      });
+    }
+
+    return rows.sort(
+      (a, b) => new Date(b.importedAt).getTime() - new Date(a.importedAt).getTime()
+    );
+  }, [imports, serviceDataImports, carePlanImports, reportImports]);
+
   const [uploaderByUserId, setUploaderByUserId] = useState<Map<string, BatchUploader>>(
     () => new Map()
   );
@@ -747,8 +913,13 @@ export function EpicConversionPage() {
   const isProgressTrackerTab = activeTab === PROGRESS_TRACKER_TAB;
   const isDiscrepanciesTab = activeTab === EPISODE_VALIDATION_TAB;
   const isCarePlanTab = activeTab === CARE_PLAN_CONVERSION_TAB;
+  const isServiceDataTab = activeTab === SERVICE_DATA_CONVERSION_TAB;
   const isSpecialTab =
-    isUploadTab || isProgressTrackerTab || isDiscrepanciesTab || isCarePlanTab;
+    isUploadTab ||
+    isProgressTrackerTab ||
+    isDiscrepanciesTab ||
+    isCarePlanTab ||
+    isServiceDataTab;
 
   const isEpisodeConversionTab = activeTab === EPISODE_CONVERSION_STRATEGY;
 
@@ -771,6 +942,35 @@ export function EpicConversionPage() {
     isProgressTrackerTab,
     reportImports.length,
     records,
+    loadUnifiedReconciliationDetails,
+  ]);
+
+  useEffect(() => {
+    if (!loading) setAppReady(true);
+  }, [loading]);
+
+  const handleRefreshAll = useCallback(async () => {
+    if (refreshingAll) return;
+    setRefreshingAll(true);
+    try {
+      await Promise.all([
+        refreshRecords(),
+        refreshReports(),
+        refreshCarePlanImports(),
+        refreshServiceDataImports(),
+        epicMapsContext?.refresh() ?? Promise.resolve(),
+      ]);
+      await loadUnifiedReconciliationDetails();
+    } finally {
+      setRefreshingAll(false);
+    }
+  }, [
+    refreshingAll,
+    refreshRecords,
+    refreshReports,
+    refreshCarePlanImports,
+    refreshServiceDataImports,
+    epicMapsContext,
     loadUnifiedReconciliationDetails,
   ]);
 
@@ -800,6 +1000,72 @@ export function EpicConversionPage() {
   const carePlanImportFilenames = useMemo(
     () => new Map(carePlanImports.map((imp) => [imp.id, imp.source_filename])),
     [carePlanImports]
+  );
+
+  const fetchServiceDataDailyCountsWithCarePlanLink = useCallback(
+    async (startDate: string, endDate: string) => {
+      const counts = await fetchServiceDataDailyCountsForDateRange(startDate, endDate);
+      const templatedCarePlanPercentByDate =
+        carePlanImports.length > 0
+          ? computeTemplatedCarePlanPercentByServiceDay(
+              counts.enrollIdsByDate,
+              records,
+              carePlanRows
+            )
+          : new Map<string, number>();
+      const templatedCarePlanPercentByWeekStart =
+        carePlanImports.length > 0
+          ? computeTemplatedCarePlanPercentByServiceWeek(
+              counts.enrollIdsByWeekStart,
+              records,
+              carePlanRows
+            )
+          : new Map<string, number>();
+      const templatedCarePlanCountByDate =
+        carePlanImports.length > 0
+          ? computeTemplatedCarePlanCountByServiceDay(
+              counts.enrollIdsByDate,
+              records,
+              carePlanRows
+            )
+          : new Map<string, number>();
+      const templatedCarePlanCountByWeekStart =
+        carePlanImports.length > 0
+          ? computeTemplatedCarePlanCountByServiceWeek(
+              counts.enrollIdsByWeekStart,
+              records,
+              carePlanRows
+            )
+          : new Map<string, number>();
+      const patientsByDate = computeServiceDayPatientsByDate(
+        counts.enrollIdsByDate,
+        counts.ssdbPatientByDate,
+        records,
+        carePlanRows,
+        carePlanImports.length > 0
+      );
+      const services = computeServiceDayServices(
+        counts.ssdbServiceRows,
+        records,
+        carePlanRows,
+        carePlanImports.length > 0
+      );
+
+      return {
+        serviceCountsByDate: counts.serviceCountsByDate,
+        patientCountsByDate: counts.patientCountsByDate,
+        weekServiceCountsByWeekStart: counts.weekServiceCountsByWeekStart,
+        weekPatientCountsByWeekStart: counts.weekPatientCountsByWeekStart,
+        templatedCarePlanPercentByDate,
+        templatedCarePlanPercentByWeekStart,
+        templatedCarePlanCountByDate,
+        templatedCarePlanCountByWeekStart,
+        patientsByDate,
+        services,
+        error: counts.error,
+      };
+    },
+    [fetchServiceDataDailyCountsForDateRange, carePlanImports.length, records, carePlanRows]
   );
 
   const { patientLinks: carePlanPatientLinks, summary: carePlanSummary } =
@@ -866,7 +1132,8 @@ export function EpicConversionPage() {
       activeTab === UPLOAD_DATA_TAB ||
       activeTab === PROGRESS_TRACKER_TAB ||
       activeTab === EPISODE_VALIDATION_TAB ||
-      activeTab === CARE_PLAN_CONVERSION_TAB
+      activeTab === CARE_PLAN_CONVERSION_TAB ||
+      activeTab === SERVICE_DATA_CONVERSION_TAB
     ) {
       return;
     }
@@ -1130,60 +1397,149 @@ export function EpicConversionPage() {
     }
   };
 
-  const openEnrolmentUploadDialog = () => {
-    setEnrolmentDialogOpen(true);
-    setEnrolmentDialogPhase('form');
-    setEnrolmentDialogFile(null);
-    setEnrolmentDialogError(null);
-    setEnrolmentDialogSuccessMessage(null);
+  const resolveImportUploaderName = (
+    kind: ConsolidatedImportKind,
+    importedBy: string | null
+  ): string => {
+    if (!importedBy) return 'Unknown';
+    const uploader =
+      kind === 'enrolment' || kind === 'serviceData'
+        ? uploaderByUserId.get(importedBy)
+        : kind === 'carePlan'
+          ? carePlanUploaderByUserId.get(importedBy)
+          : reportUploaderByUserId.get(importedBy);
+    return uploaderLabel(uploader);
   };
 
-  const closeEnrolmentUploadDialog = () => {
-    setEnrolmentDialogOpen(false);
-    setEnrolmentDialogPhase('form');
-    setEnrolmentDialogFile(null);
-    setEnrolmentDialogError(null);
-    setEnrolmentDialogSuccessMessage(null);
+  const openImportDialog = () => {
+    setImportDialogOpen(true);
+    setImportDialogPhase('form');
+    setImportDialogFiles({
+      enrolment: null,
+      serviceData: null,
+      carePlan: null,
+      epicReport: null,
+    });
+    setImportDialogError(null);
+    setImportDialogSuccessMessage(null);
   };
 
-  const handleEnrolmentDialogSubmit = async () => {
-    if (!enrolmentDialogFile) return;
-    setEnrolmentDialogPhase('processing');
-    setEnrolmentDialogError(null);
-    setUploadingEnrolment(true);
-    const result = await handleEnrolmentUpload(enrolmentDialogFile);
-    setUploadingEnrolment(false);
-    if (result.ok) {
-      setEnrolmentDialogSuccessMessage(
-        'Your data has been processed and the data in this app has been refreshed.'
-      );
-      setEnrolmentDialogPhase('success');
-    } else {
-      setEnrolmentDialogError(result.error);
-      setEnrolmentDialogPhase('form');
+  const closeImportDialog = () => {
+    setImportDialogOpen(false);
+    setImportDialogPhase('form');
+    setImportDialogFiles({
+      enrolment: null,
+      serviceData: null,
+      carePlan: null,
+      epicReport: null,
+    });
+    setImportDialogError(null);
+    setImportDialogSuccessMessage(null);
+  };
+
+  const handleImportDialogFileChange = (kind: ConsolidatedImportKind, file: File | null) => {
+    setImportDialogFiles((prev) => ({ ...prev, [kind]: file }));
+    setImportDialogError(null);
+  };
+
+  const handleImportDialogSubmit = async () => {
+    const { enrolment, serviceData, carePlan, epicReport } = importDialogFiles;
+    if (!enrolment && !serviceData && !carePlan && !epicReport) return;
+
+    setImportDialogPhase('processing');
+    setImportDialogError(null);
+    setUploadingImport(true);
+
+    const errors: string[] = [];
+    const successParts: string[] = [];
+
+    if (enrolment) {
+      setUploadError(null);
+      setUploadSuccessMessage(null);
+      const result = await handleEnrolmentUpload(enrolment);
+      if (result.ok) {
+        successParts.push(IMPORT_DOCUMENT_TYPE_LABELS.enrolment);
+        setUploadSuccessMessage(result.message);
+      } else {
+        errors.push(`${IMPORT_DOCUMENT_TYPE_LABELS.enrolment}: ${result.error}`);
+      }
     }
-  };
 
-  const closeEpicReportUploadOverlay = () => {
-    setEpicReportOverlayOpen(false);
-    setEpicReportOverlayPhase('processing');
-  };
-
-  const handleEpicReportsUpload = async (file: File) => {
-    setEpicReportOverlayOpen(true);
-    setEpicReportOverlayPhase('processing');
-    setUploadingEpicReport(true);
-    setEpicReportError(null);
-    const result = await uploadReport(file, user?.id ?? null);
-    setUploadingEpicReport(false);
-    if (result.error) {
-      setEpicReportError(result.error);
-      closeEpicReportUploadOverlay();
-    } else if (result.summary) {
-      setEpicReportOverlayPhase('success');
-    } else {
-      closeEpicReportUploadOverlay();
+    if (serviceData) {
+      const result = await uploadServiceData(serviceData, user?.id ?? null);
+      if (result.error) {
+        errors.push(`${IMPORT_DOCUMENT_TYPE_LABELS.serviceData}: ${result.error}`);
+      } else {
+        successParts.push(`${IMPORT_DOCUMENT_TYPE_LABELS.serviceData} (${result.message ?? 'done'})`);
+        if (result.message) {
+          setUploadSuccessMessage(result.message);
+        }
+      }
     }
+
+    if (carePlan) {
+      setCarePlanUploadError(null);
+      const result = await uploadCarePlan(carePlan, user?.id ?? null);
+      if (result.error) {
+        errors.push(`${IMPORT_DOCUMENT_TYPE_LABELS.carePlan}: ${result.error}`);
+      } else {
+        const importFilenames = new Map(
+          result.imports.map((imp) => [imp.id, imp.source_filename])
+        );
+        const refreshedLinks = buildCarePlanPatientLinks(
+          records,
+          result.carePlanRows,
+          validatedRecordIds,
+          importFilenames
+        );
+        const recordIdsToRecheck = findCompletedRecordIdsNeedingCarePlanRecheck(refreshedLinks);
+        if (recordIdsToRecheck.length > 0) {
+          const { error: recheckError } = await clearCarePlanCompletionForRecords(
+            recordIdsToRecheck
+          );
+          if (recheckError) {
+            errors.push(`${IMPORT_DOCUMENT_TYPE_LABELS.carePlan}: ${recheckError}`);
+          }
+        }
+
+        if (!errors.some((message) => message.startsWith(IMPORT_DOCUMENT_TYPE_LABELS.carePlan))) {
+          successParts.push(
+            `${IMPORT_DOCUMENT_TYPE_LABELS.carePlan} (${result.rowCount} row${result.rowCount === 1 ? '' : 's'})`
+          );
+        }
+      }
+    }
+
+    if (epicReport) {
+      setEpicReportError(null);
+      const result = await uploadReport(epicReport, user?.id ?? null);
+      if (result.error) {
+        errors.push(`${IMPORT_DOCUMENT_TYPE_LABELS.epicReport}: ${result.error}`);
+      } else if (result.summary) {
+        const { totalRows, validated, unmatched, fieldDiscrepancy, statusDiscrepancy } =
+          result.summary;
+        successParts.push(
+          `${IMPORT_DOCUMENT_TYPE_LABELS.epicReport} (${totalRows} row${totalRows === 1 ? '' : 's'}; ${validated} validated, ${unmatched} unmatched, ${fieldDiscrepancy + statusDiscrepancy} with discrepancies)`
+        );
+      } else {
+        errors.push(`${IMPORT_DOCUMENT_TYPE_LABELS.epicReport}: Upload completed with no summary.`);
+      }
+    }
+
+    setUploadingImport(false);
+
+    if (errors.length > 0) {
+      setImportDialogError(errors.join(' '));
+      setImportDialogPhase('form');
+      return;
+    }
+
+    setImportDialogSuccessMessage(
+      successParts.length === 1
+        ? `${successParts[0]} imported successfully. The data in this app has been refreshed.`
+        : `Imported ${successParts.length} files successfully (${successParts.join('; ')}). The data in this app has been refreshed.`
+    );
+    setImportDialogPhase('success');
   };
 
   const handleDeleteReportImport = async (importId: string, filename: string) => {
@@ -1192,20 +1548,22 @@ export function EpicConversionPage() {
     if (err) setEpicReportError(err);
   };
 
-  const handleCarePlanUpload = async (file: File) => {
-    setUploadingCarePlan(true);
-    setCarePlanUploadError(null);
-    const result = await uploadCarePlan(file, user?.id ?? null);
-    setUploadingCarePlan(false);
-    if (result.error) {
-      setCarePlanUploadError(result.error);
-    }
-  };
-
   const handleDeleteCarePlanImport = async (importId: string, filename: string) => {
     if (!window.confirm(`Delete care plan import "${filename}"? This cannot be undone.`)) return;
     const { error: err } = await deleteCarePlanImport(importId);
     if (err) setCarePlanUploadError(err);
+  };
+
+  const handleDeleteServiceDataImport = async (importId: string, filename: string) => {
+    if (
+      !window.confirm(
+        `Delete service data import "${filename}"? This removes the import record from history; service rows already ingested remain in the database.`
+      )
+    ) {
+      return;
+    }
+    const { error: err } = await deleteServiceImport(importId);
+    if (err) setUploadError(err);
   };
 
   const handleIclDecisionChange = async (record: EpicConversionRecord, decision: IclDecision) => {
@@ -1405,42 +1763,49 @@ export function EpicConversionPage() {
     downloadEpicReportImportXlsx(rows ?? [], filename);
   };
 
-  const handleExportSubmittedDischarges = () => {
+  const handleDownloadCarePlanImport = async (importId: string, filename: string) => {
+    const { rows, error: fetchError } = await fetchCarePlanRowsForImport(importId);
+    if (fetchError) {
+      setCarePlanUploadError(fetchError);
+      return;
+    }
+    downloadCarePlanImportXlsx(rows ?? [], filename);
+  };
+
+  const handleDownloadServiceDataImport = async (importId: string, filename: string) => {
+    const { rows, error: fetchError } = await fetchServiceDataRowsForImport(importId);
+    if (fetchError) {
+      setUploadError(fetchError);
+      return;
+    }
+    downloadSsdbServiceImportXlsx(rows ?? [], filename);
+  };
+
+  const exportEpicConversionTable = (
+    records: EpicConversionRecord[],
+    slug: string,
+    variant: EpicTableExportVariant
+  ) => {
     const date = new Date().toISOString().slice(0, 10);
-    downloadSubmittedDischargesXlsx(
+    downloadEpicConversionTableXlsx(records, variant, `${slug}-${date}.xlsx`, {
+      validationByRecordId: epicValidationByRecordId,
+    });
+  };
+
+  const handleExportSubmittedDischarges = () => {
+    exportEpicConversionTable(
       dischargeSubmittedRecords,
-      `submitted-discharges-${date}.xlsx`
+      'submitted-discharges',
+      'discharge-submitted'
     );
   };
 
   return (
     <>
     <div className="hc-page hc-page--split">
-      <input
-        ref={epicReportsFileRef}
-        type="file"
-        accept=".xlsx,.xls"
-        hidden
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) void handleEpicReportsUpload(f);
-          e.target.value = '';
-        }}
-      />
-      <input
-        ref={carePlanFileRef}
-        type="file"
-        accept=".xlsx,.xls"
-        hidden
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) void handleCarePlanUpload(f);
-          e.target.value = '';
-        }}
-      />
-
-      {!loading && (
+      {appReady && (
         <nav className="hc-strategy-tabs hc-strategy-tabs--below-title" aria-label="Epic conversion">
+          <div className="hc-strategy-tabs-list">
           <button
             type="button"
             className={`hc-strategy-tab${
@@ -1501,8 +1866,21 @@ export function EpicConversionPage() {
               </button>
             );
 
+            const serviceDataTab = (
+              <button
+                key={SERVICE_DATA_CONVERSION_TAB}
+                type="button"
+                className={`hc-strategy-tab${
+                  isServiceDataTab ? ' hc-strategy-tab--active' : ''
+                }`}
+                onClick={() => setActiveTab(SERVICE_DATA_CONVERSION_TAB)}
+              >
+                {SERVICE_DATA_CONVERSION_TAB}
+              </button>
+            );
+
             if (strategy === DISCHARGE_STRATEGY) {
-              return [carePlanTab, strategyTab];
+              return [carePlanTab, serviceDataTab, strategyTab];
             }
 
             if (strategy !== EPISODE_CONVERSION_STRATEGY) {
@@ -1526,20 +1904,31 @@ export function EpicConversionPage() {
             </button>
           )}
           {!strategyTabs.includes(DISCHARGE_STRATEGY) && (
-            <button
-              type="button"
-              className={`hc-strategy-tab${
-                isCarePlanTab ? ' hc-strategy-tab--active' : ''
-              }`}
-              onClick={() => setActiveTab(CARE_PLAN_CONVERSION_TAB)}
-            >
-              {CARE_PLAN_CONVERSION_TAB}
-              {carePlanSummary.withoutCarePlanCount > 0 && (
-                <span className="hc-strategy-tab-count hc-strategy-tab-count--care-plan">
-                  {carePlanSummary.withoutCarePlanCount}
-                </span>
-              )}
-            </button>
+            <>
+              <button
+                type="button"
+                className={`hc-strategy-tab${
+                  isCarePlanTab ? ' hc-strategy-tab--active' : ''
+                }`}
+                onClick={() => setActiveTab(CARE_PLAN_CONVERSION_TAB)}
+              >
+                {CARE_PLAN_CONVERSION_TAB}
+                {carePlanSummary.withoutCarePlanCount > 0 && (
+                  <span className="hc-strategy-tab-count hc-strategy-tab-count--care-plan">
+                    {carePlanSummary.withoutCarePlanCount}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                className={`hc-strategy-tab${
+                  isServiceDataTab ? ' hc-strategy-tab--active' : ''
+                }`}
+                onClick={() => setActiveTab(SERVICE_DATA_CONVERSION_TAB)}
+              >
+                {SERVICE_DATA_CONVERSION_TAB}
+              </button>
+            </>
           )}
           <button
             type="button"
@@ -1550,9 +1939,24 @@ export function EpicConversionPage() {
           >
             {UPLOAD_DATA_TAB}
           </button>
+          </div>
+          <button
+            type="button"
+            className={`hc-strategy-tabs-refresh${
+              refreshingAll ? ' hc-strategy-tabs-refresh--spinning' : ''
+            }`}
+            onClick={() => void handleRefreshAll()}
+            disabled={refreshingAll}
+            aria-label="Refresh all data"
+            title="Refresh all data"
+          >
+            <RefreshIcon />
+          </button>
         </nav>
       )}
+    </div>
 
+    <div className="hc-epic-page-content">
       {uploadError && !isUploadTab && <p className="hc-form-error">{uploadError}</p>}
       {statusError && <p className="hc-form-error">{statusError}</p>}
       {error && <p className="hc-form-error">{error}</p>}
@@ -1650,240 +2054,115 @@ export function EpicConversionPage() {
       )}
 
       {loading && <p className="hc-muted">Loading records…</p>}
-    </div>
     {!loading && isUploadTab && (
       <div className="hc-import-panels">
-        <section className="hc-panel hc-import-panel">
-          <div className="hc-import-column-header">
-            <h2 className="hc-import-column-title">VHA SSDB Enrolment Data</h2>
-            <button
-              type="button"
-              className="hc-btn hc-btn-primary hc-import-upload-btn"
-              disabled={uploadingEnrolment}
-              aria-label={uploadingEnrolment ? 'Uploading enrolment data' : 'Upload enrolment data'}
-              onClick={openEnrolmentUploadDialog}
-            >
-              <UploadDataIcon />
-            </button>
-          </div>
+        <div className="hc-import-panel-header">
+          <button
+            type="button"
+            className="hc-btn hc-btn-primary hc-import-upload-btn"
+            disabled={uploadingImport}
+            aria-label={uploadingImport ? 'Uploading data' : 'Import data'}
+            onClick={openImportDialog}
+          >
+            <span className="hc-import-upload-btn-label">Import Data</span>
+            <UploadDataIcon />
+          </button>
+        </div>
+        <section className="hc-panel hc-import-panel hc-import-panel--consolidated">
           {uploadError && <p className="hc-form-error">{uploadError}</p>}
+          {serviceDataError && <p className="hc-form-error">{serviceDataError}</p>}
           {uploadSuccessMessage && <p className="hc-info">{uploadSuccessMessage}</p>}
-          <div className="hc-import-column-body">
-            <div className="hc-table-wrap hc-import-table-wrap">
-              <table className="hc-table hc-table--grid hc-table--import">
-                <thead>
-                  <tr>
-                    <th>Upload</th>
-                    <th className="hc-col-import-rows"># Rows</th>
-                    <th className="hc-col-import-actions">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {imports.length === 0 ? (
-                    <tr>
-                      <td colSpan={3} className="hc-import-empty-cell">
-                        <span className="hc-muted">No enrolment data uploaded yet.</span>
-                      </td>
-                    </tr>
-                  ) : (
-                    imports.map((imp) => {
-                      const uploader = imp.importedBy
-                        ? uploaderByUserId.get(imp.importedBy)
-                        : null;
-                      const uploaderName = imp.importedBy
-                        ? uploaderLabel(uploader)
-                        : 'Unknown';
-                      return (
-                        <tr key={`${imp.filename}-${imp.importedAt}`}>
-                          <td>
-                            <div className="hc-import-upload-cell">
-                              <span className="hc-import-filename">{imp.filename}</span>
-                              <span className="hc-import-upload-meta">
-                                {formatImportUploadMeta(uploaderName, imp.importedAt)}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="hc-col-import-rows">{imp.count}</td>
-                          <td className="hc-col-import-actions">
-                            <div className="hc-table-actions">
-                              <button
-                                type="button"
-                                className="hc-btn hc-btn-secondary hc-btn-sm"
-                                onClick={() =>
-                                  handleDownloadImport(imp.filename, imp.importedAt)
-                                }
-                              >
-                                Download
-                              </button>
-                              <button
-                                type="button"
-                                className="hc-btn hc-btn-danger hc-btn-sm"
-                                onClick={() =>
-                                  void handleDeleteImport(
-                                    imp.filename,
-                                    imp.importedAt,
-                                    imp.count
-                                  )
-                                }
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-        <section className="hc-panel hc-import-panel">
-          <div className="hc-import-column-header">
-            <h2 className="hc-import-column-title">VHA EMRI Care Plan Templates</h2>
-            <button
-              type="button"
-              className="hc-btn hc-btn-primary hc-import-upload-btn"
-              disabled={uploadingCarePlan}
-              aria-label={
-                uploadingCarePlan ? 'Uploading care plan templates' : 'Upload care plan templates'
-              }
-              onClick={() => carePlanFileRef.current?.click()}
-            >
-              <UploadDataIcon />
-            </button>
-          </div>
           {carePlanUploadError && <p className="hc-form-error">{carePlanUploadError}</p>}
           {carePlanError && <p className="hc-form-error">{carePlanError}</p>}
-          <div className="hc-import-column-body">
-            <div className="hc-table-wrap hc-import-table-wrap">
-              <table className="hc-table hc-table--grid hc-table--import">
-                <thead>
-                  <tr>
-                    <th>Upload</th>
-                    <th className="hc-col-import-rows"># Rows</th>
-                    <th className="hc-col-import-actions">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {carePlanImports.length === 0 ? (
-                    <tr>
-                      <td colSpan={3} className="hc-import-empty-cell">
-                        <span className="hc-muted">No care plan templates uploaded yet.</span>
-                      </td>
-                    </tr>
-                  ) : (
-                    carePlanImports.map((imp) => {
-                      const uploader = imp.imported_by
-                        ? carePlanUploaderByUserId.get(imp.imported_by)
-                        : null;
-                      const uploaderName = imp.imported_by
-                        ? uploaderLabel(uploader)
-                        : 'Unknown';
-                      return (
-                        <tr key={imp.id}>
-                          <td>
-                            <div className="hc-import-upload-cell">
-                              <span className="hc-import-filename">{imp.source_filename}</span>
-                              <span className="hc-import-upload-meta">
-                                {formatImportUploadMeta(uploaderName, imp.imported_at)}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="hc-col-import-rows">{imp.row_count}</td>
-                          <td className="hc-col-import-actions">
-                            <div className="hc-table-actions">
-                              <button
-                                type="button"
-                                className="hc-btn hc-btn-danger hc-btn-sm"
-                                onClick={() =>
-                                  void handleDeleteCarePlanImport(imp.id, imp.source_filename)
-                                }
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-        <section className="hc-panel hc-import-panel">
-          <div className="hc-import-column-header">
-            <h2 className="hc-import-column-title">Epic Conversion Reports</h2>
-            <button
-              type="button"
-              className="hc-btn hc-btn-primary hc-import-upload-btn"
-              disabled={uploadingEpicReport}
-              aria-label={uploadingEpicReport ? 'Uploading Epic conversion report' : 'Upload Epic conversion report'}
-              onClick={() => epicReportsFileRef.current?.click()}
-            >
-              <UploadDataIcon />
-            </button>
-          </div>
           {epicReportError && <p className="hc-form-error">{epicReportError}</p>}
           {reportError && <p className="hc-form-error">{reportError}</p>}
           <div className="hc-import-column-body">
-            <div className="hc-table-wrap hc-import-table-wrap">
+            <div className="hc-import-table-block">
+              <div className="hc-table-wrap hc-import-table-wrap">
               <table className="hc-table hc-table--grid hc-table--import">
                 <thead>
                   <tr>
-                    <th>Upload</th>
+                    <th className="hc-col-import-type">Document Type</th>
+                    <th className="hc-col-import-date">Uploaded Date</th>
+                    <th className="hc-col-import-by">Uploaded By</th>
+                    <th className="hc-col-import-filename">File Name</th>
                     <th className="hc-col-import-rows"># Rows</th>
                     <th className="hc-col-import-actions">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {reportImports.length === 0 ? (
+                  {consolidatedImports.length === 0 ? (
                     <tr>
-                      <td colSpan={3} className="hc-import-empty-cell">
-                        <span className="hc-muted">No Epic conversion report uploaded yet.</span>
+                      <td colSpan={6} className="hc-import-empty-cell">
+                        <span className="hc-muted">No data uploaded yet.</span>
                       </td>
                     </tr>
                   ) : (
-                    reportImports.map((imp) => {
-                      const uploader = imp.imported_by
-                        ? reportUploaderByUserId.get(imp.imported_by)
-                        : null;
-                      const uploaderName = imp.imported_by
-                        ? uploaderLabel(uploader)
-                        : 'Unknown';
+                    consolidatedImports.map((imp) => {
+                      const uploaderName = resolveImportUploaderName(imp.kind, imp.importedBy);
                       return (
-                        <tr key={imp.id}>
-                          <td>
-                            <div className="hc-import-upload-cell">
-                              <span className="hc-import-filename">{imp.source_filename}</span>
-                              <span className="hc-import-upload-meta">
-                                {formatImportUploadMeta(uploaderName, imp.imported_at)}
-                              </span>
-                            </div>
+                        <tr key={imp.key}>
+                          <td className="hc-col-import-type">{imp.documentType}</td>
+                          <td className="hc-col-import-date">
+                            <ImportUploadedDateCell importedAt={imp.importedAt} />
                           </td>
-                          <td className="hc-col-import-rows">{imp.row_count}</td>
+                          <td className="hc-col-import-by">{uploaderName}</td>
+                          <td className="hc-col-import-filename">
+                            <span className="hc-import-filename" title={imp.filename}>
+                              {imp.filename}
+                            </span>
+                          </td>
+                          <td className="hc-col-import-rows">{imp.rowCount}</td>
                           <td className="hc-col-import-actions">
                             <div className="hc-table-actions">
                               <button
                                 type="button"
-                                className="hc-btn hc-btn-secondary hc-btn-sm"
-                                onClick={() =>
-                                  void handleDownloadReportImport(imp.id, imp.source_filename)
-                                }
+                                className="hc-btn hc-btn-secondary hc-btn-sm hc-btn-icon hc-btn-icon-download"
+                                aria-label={`Download ${imp.filename}`}
+                                onClick={() => {
+                                  if (imp.kind === 'enrolment' && imp.enrolmentKey) {
+                                    void handleDownloadImport(
+                                      imp.enrolmentKey.filename,
+                                      imp.enrolmentKey.importedAt
+                                    );
+                                  } else if (imp.kind === 'serviceData' && imp.serviceDataId) {
+                                    void handleDownloadServiceDataImport(
+                                      imp.serviceDataId,
+                                      imp.filename
+                                    );
+                                  } else if (imp.kind === 'carePlan' && imp.carePlanId) {
+                                    void handleDownloadCarePlanImport(imp.carePlanId, imp.filename);
+                                  } else if (imp.kind === 'epicReport' && imp.reportId) {
+                                    void handleDownloadReportImport(imp.reportId, imp.filename);
+                                  }
+                                }}
                               >
-                                Download
+                                <DownloadDataIcon />
                               </button>
                               <button
                                 type="button"
-                                className="hc-btn hc-btn-danger hc-btn-sm"
-                                onClick={() =>
-                                  void handleDeleteReportImport(imp.id, imp.source_filename)
-                                }
+                                className="hc-btn hc-btn-danger hc-btn-sm hc-btn-icon"
+                                aria-label={`Delete ${imp.filename}`}
+                                onClick={() => {
+                                  if (imp.kind === 'enrolment' && imp.enrolmentKey) {
+                                    void handleDeleteImport(
+                                      imp.enrolmentKey.filename,
+                                      imp.enrolmentKey.importedAt,
+                                      imp.enrolmentKey.count
+                                    );
+                                  } else if (imp.kind === 'serviceData' && imp.serviceDataId) {
+                                    void handleDeleteServiceDataImport(
+                                      imp.serviceDataId,
+                                      imp.filename
+                                    );
+                                  } else if (imp.kind === 'carePlan' && imp.carePlanId) {
+                                    void handleDeleteCarePlanImport(imp.carePlanId, imp.filename);
+                                  } else if (imp.kind === 'epicReport' && imp.reportId) {
+                                    void handleDeleteReportImport(imp.reportId, imp.filename);
+                                  }
+                                }}
                               >
-                                Delete
+                                <TrashIcon />
                               </button>
                             </div>
                           </td>
@@ -1893,6 +2172,7 @@ export function EpicConversionPage() {
                   )}
                 </tbody>
               </table>
+              </div>
             </div>
           </div>
         </section>
@@ -1907,6 +2187,23 @@ export function EpicConversionPage() {
           void handleToggleCarePlanCompleted(recordId, completed)
         }
       />
+    )}
+    {!loading && isServiceDataTab && (
+      <div className="hc-service-data-conversion" aria-label={SERVICE_DATA_CONVERSION_TAB}>
+        <ServiceDataCalendar
+          fetchDailyCountsForDateRange={fetchServiceDataDailyCountsWithCarePlanLink}
+          fetchMonthHasServices={fetchServiceDataMonthHasServices}
+          hasCarePlanImports={carePlanImports.length > 0}
+          refreshKey={[
+            ...serviceDataImports.map(
+              (imp) => `${imp.id}:${imp.imported_at}:${imp.row_count}`
+            ),
+            ...carePlanImports.map(
+              (imp) => `${imp.id}:${imp.imported_at}:${imp.row_count}`
+            ),
+          ].join('|')}
+        />
+      </div>
     )}
     {!loading && isDiscrepanciesTab && (
       <div className="hc-epic-table-stack hc-epic-table-stack--main-expanded">
@@ -1929,6 +2226,7 @@ export function EpicConversionPage() {
         unifiedImportActivity={unifiedImportActivity}
         uploaderByUserId={uploaderByUserId}
         reportUploaderByUserId={reportUploaderByUserId}
+        carePlanUploaderByUserId={carePlanUploaderByUserId}
         onNavigateToStrategy={setActiveTab}
         onNavigateToCarePlan={() => setActiveTab(CARE_PLAN_CONVERSION_TAB)}
       />
@@ -1952,6 +2250,12 @@ export function EpicConversionPage() {
                 fill: 'main',
                 iclStagedDecisions: true,
                 expandTarget: 'main',
+                onExportXlsx: () =>
+                  exportEpicConversionTable(
+                    iclPendingRecords,
+                    'icl-decision-required',
+                    'icl-pending'
+                  ),
               }
             )}
             <div className="hc-epic-split-tables">
@@ -1959,13 +2263,33 @@ export function EpicConversionPage() {
                 'Episode Conversion',
                 iclConvertRecords,
                 'No convert decisions yet.',
-                { variant: 'icl', compact: true, expandTarget: 'split' }
+                {
+                  variant: 'icl',
+                  compact: true,
+                  expandTarget: 'split',
+                  onExportXlsx: () =>
+                    exportEpicConversionTable(
+                      iclConvertRecords,
+                      'episode-conversion',
+                      'icl-decision'
+                    ),
+                }
               )}
               {renderSplitPanel(
                 'Discharge from Program',
                 iclDischargeRecords,
                 'No discharge decisions yet.',
-                { variant: 'icl', compact: true, expandTarget: 'split' }
+                {
+                  variant: 'icl',
+                  compact: true,
+                  expandTarget: 'split',
+                  onExportXlsx: () =>
+                    exportEpicConversionTable(
+                      iclDischargeRecords,
+                      'discharge-from-program-decisions',
+                      'icl-decision'
+                    ),
+                }
               )}
             </div>
           </div>
@@ -1992,6 +2316,12 @@ export function EpicConversionPage() {
                   statusInput: 'radio',
                   showChangeStatus: true,
                   expandTarget: 'main',
+                  onExportXlsx: () =>
+                    exportEpicConversionTable(
+                      episodeConversionPendingRecords,
+                      'pending-conversion',
+                      'status-pending'
+                    ),
                 }
               )}
               {renderSplitPanel(
@@ -2008,6 +2338,12 @@ export function EpicConversionPage() {
                   validationCounts: episodeConversionValidationCounts,
                   validationFilter: completionValidationFilter,
                   onValidationFilterChange: setCompletionValidationFilter,
+                  onExportXlsx: () =>
+                    exportEpicConversionTable(
+                      filteredEpisodeConversionCompletedRecords,
+                      'episode-conversion-complete',
+                      'status-completion'
+                    ),
                 }
               )}
             </div>
@@ -2029,7 +2365,17 @@ export function EpicConversionPage() {
                 'Discharge from Program',
                 dischargePendingRecords,
                 'No pending discharges.',
-                { variant: 'discharge', fill: 'main', expandTarget: 'main' }
+                {
+                  variant: 'discharge',
+                  fill: 'main',
+                  expandTarget: 'main',
+                  onExportXlsx: () =>
+                    exportEpicConversionTable(
+                      dischargePendingRecords,
+                      'pending-discharges',
+                      'discharge-pending'
+                    ),
+                }
               )}
               {renderSplitPanel(
                 'Submitted Discharges',
@@ -2054,22 +2400,19 @@ export function EpicConversionPage() {
         )}
       </>
     )}
-    <EnrolmentUploadDialog
-      open={enrolmentDialogOpen}
-      phase={enrolmentDialogPhase}
-      selectedFile={enrolmentDialogFile}
-      error={enrolmentDialogError}
-      successMessage={enrolmentDialogSuccessMessage}
-      onClose={closeEnrolmentUploadDialog}
-      onFileChange={setEnrolmentDialogFile}
-      onSubmit={() => void handleEnrolmentDialogSubmit()}
+    </div>
+    <ConsolidatedImportUploadDialog
+      open={importDialogOpen}
+      phase={importDialogPhase}
+      files={importDialogFiles}
+      error={importDialogError}
+      successMessage={importDialogSuccessMessage}
+      onClose={closeImportDialog}
+      onFileChange={handleImportDialogFileChange}
+      onSubmit={() => void handleImportDialogSubmit()}
+      onShowEnrolmentHowto={() => setSsdbHowtoOpen(true)}
     />
-    <UploadProcessingOverlay
-      open={epicReportOverlayOpen}
-      phase={epicReportOverlayPhase}
-      ariaLabel="Upload Epic conversion report"
-      onClose={closeEpicReportUploadOverlay}
-    />
+    <SsdbEnrolmentHowtoModal open={ssdbHowtoOpen} onClose={() => setSsdbHowtoOpen(false)} />
     {statusChangePrompt && (
       <div
         className="hc-modal-backdrop"
@@ -2224,15 +2567,11 @@ export function EpicConversionPage() {
           {(options.onExportXlsx || options.expandTarget) && (
             <span className="hc-epic-split-panel-title-actions">
               {options.onExportXlsx && (
-                <button
-                  type="button"
-                  className="hc-btn hc-btn-secondary hc-btn-sm"
+                <TableExportButton
                   disabled={groupRecords.length === 0}
-                  aria-label="Export submitted discharges as Excel"
+                  ariaLabel={`Export ${title} as Excel`}
                   onClick={options.onExportXlsx}
-                >
-                  Export
-                </button>
+                />
               )}
               {options.expandTarget && (
                 <button
@@ -2349,7 +2688,13 @@ export function EpicConversionPage() {
                     {(() => {
                       const validation = epicValidationByRecordId.get(r.id);
                       const epicSnapshot = epicSnapshotByRecordId.get(r.id);
-                      if (validation?.status !== 'discrepancy' || !epicSnapshot) return null;
+                      if (
+                        !epicSnapshot ||
+                        (validation?.status !== 'validated' &&
+                          validation?.status !== 'discrepancy')
+                      ) {
+                        return null;
+                      }
                       const icLead = epicSnapshot.icLead ?? '—';
                       return (
                         <>

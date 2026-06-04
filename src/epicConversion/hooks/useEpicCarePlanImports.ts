@@ -10,6 +10,10 @@ export interface CarePlanUploadResult {
   error: string | null;
   importId: string | null;
   rowCount: number;
+  /** All care plan rows after a successful upload refresh. */
+  carePlanRows: EpicCarePlanRow[];
+  /** All care plan imports after a successful upload refresh. */
+  imports: EpicCarePlanImport[];
 }
 
 export function useEpicCarePlanImports() {
@@ -18,7 +22,11 @@ export function useEpicCarePlanImports() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<{
+    imports: EpicCarePlanImport[];
+    carePlanRows: EpicCarePlanRow[];
+    error: string | null;
+  }> => {
     setLoading(true);
     setError(null);
 
@@ -32,7 +40,7 @@ export function useEpicCarePlanImports() {
       setImports([]);
       setCarePlanRows([]);
       setLoading(false);
-      return;
+      return { imports: [], carePlanRows: [], error: importError.message };
     }
 
     const list = (importData as EpicCarePlanImport[]) ?? [];
@@ -41,7 +49,7 @@ export function useEpicCarePlanImports() {
     if (!list.length) {
       setCarePlanRows([]);
       setLoading(false);
-      return;
+      return { imports: [], carePlanRows: [], error: null };
     }
 
     const importIds = list.map((imp) => imp.id);
@@ -59,11 +67,13 @@ export function useEpicCarePlanImports() {
     if (rowError) {
       setError(rowError.message);
       setCarePlanRows([]);
-    } else {
-      setCarePlanRows(rowData);
+      setLoading(false);
+      return { imports: list, carePlanRows: [], error: rowError.message };
     }
 
+    setCarePlanRows(rowData);
     setLoading(false);
+    return { imports: list, carePlanRows: rowData, error: null };
   }, []);
 
   useEffect(() => {
@@ -80,6 +90,8 @@ export function useEpicCarePlanImports() {
             error: parsed.errors.slice(0, 5).join('; '),
             importId: null,
             rowCount: 0,
+            carePlanRows: [],
+            imports: [],
           };
         }
 
@@ -100,6 +112,8 @@ export function useEpicCarePlanImports() {
             error: importError?.message ?? 'Failed to save care plan import',
             importId: null,
             rowCount: 0,
+            carePlanRows: [],
+            imports: [],
           };
         }
 
@@ -117,21 +131,27 @@ export function useEpicCarePlanImports() {
               error: rowError.message,
               importId: null,
               rowCount: 0,
+              carePlanRows: [],
+              imports: [],
             };
           }
         }
 
-        await refresh();
+        const refreshed = await refresh();
         return {
-          error: null,
+          error: refreshed.error,
           importId,
           rowCount: parsed.rows.length,
+          carePlanRows: refreshed.carePlanRows,
+          imports: refreshed.imports,
         };
       } catch (err) {
         return {
           error: err instanceof Error ? err.message : 'Upload failed',
           importId: null,
           rowCount: 0,
+          carePlanRows: [],
+          imports: [],
         };
       }
     },

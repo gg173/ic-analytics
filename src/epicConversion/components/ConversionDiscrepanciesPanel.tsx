@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { downloadReconciliationXlsx } from '../export/buildReconciliationXlsx';
+import { TableExportButton } from './TableExportButton';
 import { iclNamesMatch } from '../reconciliation/epicIclMatch';
 import { epicPathwayMatchesVha } from '../reconciliation/epicPathwayMap';
 import {
@@ -148,6 +150,11 @@ export function ConversionDiscrepanciesPanel({
     }
   };
 
+  const handleExport = () => {
+    const date = new Date().toISOString().slice(0, 10);
+    downloadReconciliationXlsx(reconciliationDetails, `episode-validation-${date}.xlsx`);
+  };
+
   if (!hasEpicReports) {
     return (
       <section className="hc-epic-split-panel hc-epic-split-panel--main hc-conversion-discrepancies">
@@ -171,15 +178,22 @@ export function ConversionDiscrepanciesPanel({
             Episode Validation
             <span className="hc-epic-split-panel-count">{rowCount}</span>
           </span>
-          <button
-            type="button"
-            className="hc-btn hc-btn-secondary hc-btn-sm"
-            disabled={rechecking}
-            aria-label={rechecking ? 'Rechecking validation' : 'Recheck validation'}
-            onClick={() => void handleRecheck()}
-          >
-            {rechecking ? 'Rechecking…' : 'Recheck'}
-          </button>
+          <span className="hc-epic-split-panel-title-actions">
+            <TableExportButton
+              disabled={rowCount === 0}
+              ariaLabel="Export episode validation table as Excel"
+              onClick={handleExport}
+            />
+            <button
+              type="button"
+              className="hc-btn hc-btn-secondary hc-btn-sm"
+              disabled={rechecking}
+              aria-label={rechecking ? 'Rechecking validation' : 'Recheck validation'}
+              onClick={() => void handleRecheck()}
+            >
+              {rechecking ? 'Rechecking…' : 'Recheck'}
+            </button>
+          </span>
         </h3>
 
         {recheckError && <p className="hc-form-error hc-conversion-discrepancies-error">{recheckError}</p>}

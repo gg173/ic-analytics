@@ -1,12 +1,14 @@
 import { useEffect, useId, type ChangeEvent } from 'react';
 
-const SSDB_HOWTO_IMAGE_SRC = '/epic/ssdb-enrolment-export-howto.png';
+export type ImportUploadDialogPhase = 'form' | 'processing' | 'success';
 
-export type EnrolmentUploadDialogPhase = 'form' | 'processing' | 'success';
+/** @deprecated Use ImportUploadDialogPhase */
+export type EnrolmentUploadDialogPhase = ImportUploadDialogPhase;
 
-interface EnrolmentUploadDialogProps {
+interface ImportUploadDialogProps {
   open: boolean;
-  phase: EnrolmentUploadDialogPhase;
+  phase: ImportUploadDialogPhase;
+  title: string;
   selectedFile: File | null;
   error: string | null;
   successMessage: string | null;
@@ -35,17 +37,19 @@ function CheckIcon() {
   );
 }
 
-export function EnrolmentUploadDialog({
+export function ImportUploadDialog({
   open,
   phase,
+  title,
   selectedFile,
   error,
   successMessage,
   onClose,
   onFileChange,
   onSubmit,
-}: EnrolmentUploadDialogProps) {
+}: ImportUploadDialogProps) {
   const fileInputId = useId();
+  const titleId = useId();
 
   useEffect(() => {
     if (!open) return;
@@ -84,62 +88,48 @@ export function EnrolmentUploadDialog({
         className="hc-modal hc-modal--enrolment-upload"
         role="dialog"
         aria-modal="true"
-        aria-labelledby={phase === 'form' ? 'enrolment-upload-dialog-title' : undefined}
-        aria-label={phase !== 'form' ? 'Upload VHA SSDB Enrolment Data' : undefined}
+        aria-labelledby={phase === 'form' ? titleId : undefined}
+        aria-label={phase !== 'form' ? title : undefined}
         aria-busy={phase === 'processing'}
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="hc-modal-header hc-modal-header--enrolment-upload">
-          {canDismiss && (
+        {phase === 'form' && (
+          <div className="hc-enrolment-upload-actions">
+            {canDismiss && (
+              <button
+                type="button"
+                className="hc-btn hc-btn-ghost hc-enrolment-upload-close"
+                aria-label="Close"
+                onClick={onClose}
+              >
+                ×
+              </button>
+            )}
+            <h2 id={titleId} className="hc-enrolment-upload-actions-title">
+              {title}
+            </h2>
+            <label className="hc-enrolment-upload-file" htmlFor={fileInputId}>
+              <input
+                id={fileInputId}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hc-enrolment-upload-file-input"
+                onChange={handleFileInputChange}
+              />
+              <span className="hc-enrolment-upload-file-label">
+                {selectedFile ? selectedFile.name : 'Choose file…'}
+              </span>
+            </label>
             <button
               type="button"
-              className="hc-btn hc-btn-ghost hc-modal-close"
-              aria-label="Close"
-              onClick={onClose}
+              className="hc-btn hc-btn-primary"
+              disabled={!selectedFile}
+              onClick={onSubmit}
             >
-              ×
+              Submit
             </button>
-          )}
-        </header>
-
-        {phase === 'form' && (
-          <>
-            <div className="hc-enrolment-upload-form-body">
-              <div className="hc-enrolment-upload-howto">
-                <img
-                  src={SSDB_HOWTO_IMAGE_SRC}
-                  alt="SSDB export instructions: navigate to SSDB Enrollment Data, clear filters, select ACTIVE enrollment status, then export data from the table menu"
-                  className="hc-enrolment-upload-howto-img"
-                />
-              </div>
-              <div className="hc-enrolment-upload-actions">
-                <h2 id="enrolment-upload-dialog-title" className="hc-enrolment-upload-actions-title">
-                  Upload VHA SSDB Enrolment Data
-                </h2>
-                <label className="hc-enrolment-upload-file" htmlFor={fileInputId}>
-                  <input
-                    id={fileInputId}
-                    type="file"
-                    accept=".xlsx,.xls"
-                    className="hc-enrolment-upload-file-input"
-                    onChange={handleFileInputChange}
-                  />
-                  <span className="hc-enrolment-upload-file-label">
-                    {selectedFile ? selectedFile.name : 'Choose file…'}
-                  </span>
-                </label>
-                <button
-                  type="button"
-                  className="hc-btn hc-btn-primary"
-                  disabled={!selectedFile}
-                  onClick={onSubmit}
-                >
-                  Submit
-                </button>
-              </div>
-            </div>
             {error && <p className="hc-form-error">{error}</p>}
-          </>
+          </div>
         )}
 
         {phase === 'processing' && (
@@ -168,4 +158,10 @@ export function EnrolmentUploadDialog({
       </div>
     </div>
   );
+}
+
+export function EnrolmentUploadDialog(
+  props: Omit<ImportUploadDialogProps, 'title'>
+) {
+  return <ImportUploadDialog title="Upload VHA SSDB Enrolment Data" {...props} />;
 }

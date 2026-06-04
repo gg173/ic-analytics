@@ -166,8 +166,7 @@ export function buildCarePlanPatientLinks(
 
 function carePlanRowSortTime(row: LinkedCarePlanRow): number {
   if (!row.dateSaved) return 0;
-  const parsed = Date.parse(row.dateSaved);
-  return Number.isNaN(parsed) ? 0 : parsed;
+  return parseLvdMs(row.dateSaved) ?? 0;
 }
 
 /** Most recent first; ties broken by source file then row index (newer import rows later). */
@@ -192,8 +191,8 @@ export function getLatestCarePlanRow(link: CarePlanPatientLink): LinkedCarePlanR
   return sortCarePlanRowsChronological(link.carePlanRows)[0];
 }
 
-/** Start of 19 May 2026 (local). Latest care plan before this date needs an update. */
-export const CARE_PLAN_UPDATE_REQUIRED_BEFORE_MS = new Date(2026, 4, 19).getTime();
+/** 19 May 2026 (calendar). Latest care plan before this date needs an update. */
+export const CARE_PLAN_UPDATE_REQUIRED_BEFORE_MS = Date.parse('2026-05-19T12:00:00');
 
 export interface CarePlanLvdDateRange {
   from: string;
@@ -267,9 +266,8 @@ export function lvdMatchesToolbarDateRange(
 }
 
 export function isCarePlanDateStale(dateSaved: string | null | undefined): boolean {
-  if (!dateSaved?.trim()) return false;
-  const parsed = Date.parse(dateSaved);
-  if (Number.isNaN(parsed)) return false;
+  const parsed = parseLvdMs(dateSaved);
+  if (parsed == null) return false;
   return parsed < CARE_PLAN_UPDATE_REQUIRED_BEFORE_MS;
 }
 
@@ -281,6 +279,36 @@ export function patientNeedsCarePlanUpdate(link: CarePlanPatientLink): boolean {
   if (latestMs === 0) return true;
 
   return latestMs < CARE_PLAN_UPDATE_REQUIRED_BEFORE_MS;
+}
+
+/** True when the patient still has no linked care plan data. */
+export function patientHasNoCarePlanData(link: CarePlanPatientLink): boolean {
+  return link.carePlanRows.length === 0;
+}
+
+/** True when linked care plans exist but none use the conversion template. */
+export function patientHasOnlyUnstructuredCarePlan(link: CarePlanPatientLink): boolean {
+  return link.carePlanRows.length > 0 && !recordHasTemplatedCarePlan(link);
+}
+
+/**
+ * After a new EMRI upload, completed conversions in these categories should return
+ * to pending so staff can confirm the status against fresh data.
+ */
+export function patientNeedsCarePlanStatusRecheck(link: CarePlanPatientLink): boolean {
+  return (
+    patientHasNoCarePlanData(link) ||
+    patientHasOnlyUnstructuredCarePlan(link) ||
+    patientNeedsCarePlanUpdate(link)
+  );
+}
+
+export function findCompletedRecordIdsNeedingCarePlanRecheck(
+  links: CarePlanPatientLink[]
+): string[] {
+  return links
+    .filter((link) => link.carePlanCompletedAt && patientNeedsCarePlanStatusRecheck(link))
+    .map((link) => link.recordId);
 }
 
 export interface CarePlanProgressMetrics {

@@ -94,8 +94,33 @@ import {
   prunePathwayCarePathFilterSelection,
   type PathwayCarePathFilterSelection,
 } from '../carePlan/pathwayCarePathFilter';
+import { downloadCarePlanConversionXlsx } from '../export/buildCarePlanConversionXlsx';
+import { TableExportButton } from './TableExportButton';
 import { matchesMultiFilter, ToolbarMultiSelect } from './ToolbarMultiSelect';
 import { ToolbarPathwayCarePathMultiSelect } from './ToolbarPathwayCarePathMultiSelect';
+
+function exportCarePlanTableXlsx(
+  links: CarePlanPatientLink[],
+  mode: 'pending' | 'completed'
+): void {
+  const date = new Date().toISOString().slice(0, 10);
+  const slug = mode === 'pending' ? 'pending-care-plan-conversion' : 'completed-care-plan-conversion';
+  downloadCarePlanConversionXlsx(links, `${slug}-${date}.xlsx`, mode);
+}
+
+function renderPanelExportButton(
+  links: CarePlanPatientLink[],
+  mode: 'pending' | 'completed',
+  ariaLabel: string
+) {
+  return (
+    <TableExportButton
+      disabled={links.length === 0}
+      ariaLabel={ariaLabel}
+      onClick={() => exportCarePlanTableXlsx(links, mode)}
+    />
+  );
+}
 
 /** Missing or unparseable dates sort as oldest (first when ascending). */
 const SORT_DATE_OLDEST = Number.NEGATIVE_INFINITY;
@@ -713,6 +738,26 @@ export function CarePlanConversionPanel({
     key: CarePlanTableSortKey;
     direction: SortDirection;
   } | null>(null);
+  const [stackExpandMode, setStackExpandMode] = useState<'none' | 'main' | 'split'>('none');
+
+  const toggleStackExpand = (target: 'main' | 'split') => {
+    setStackExpandMode((prev) => (prev === target ? 'none' : target));
+  };
+
+  const renderStackExpandButton = (target: 'main' | 'split') => (
+    <button
+      type="button"
+      className={[
+        'hc-btn',
+        'hc-epic-split-panel-expand',
+        stackExpandMode === target
+          ? 'hc-epic-split-panel-expand--collapse'
+          : 'hc-epic-split-panel-expand--expand',
+      ].join(' ')}
+      aria-label={stackExpandMode === target ? 'Contract panel' : 'Expand panel'}
+      onClick={() => toggleStackExpand(target)}
+    />
+  );
 
   useEffect(() => {
     setLvdDateRange(defaultLvdDateRange);
@@ -842,7 +887,11 @@ export function CarePlanConversionPanel({
   const requiringCarePlanTotal = displaySummary.totalRecordCount;
 
   return (
-    <div className="hc-epic-table-stack hc-care-plan-conversion-stack">
+    <div
+      className={`hc-epic-table-stack hc-care-plan-conversion-stack${
+        stackExpandMode === 'main' ? ' hc-epic-table-stack--main-expanded' : ''
+      }${stackExpandMode === 'split' ? ' hc-epic-table-stack--split-expanded' : ''}`}
+    >
       {selectedPatientCarePlans && (
         <CarePlanRowsListModal
           mrn={selectedPatientCarePlans.mrn}
@@ -859,6 +908,14 @@ export function CarePlanConversionPanel({
           <span className="hc-epic-split-panel-title-main">
             Pending Care Plan Conversion
             <span className="hc-epic-split-panel-count">{pendingPatientLinks.length}</span>
+          </span>
+          <span className="hc-epic-split-panel-title-actions">
+            {renderPanelExportButton(
+              pendingPatientLinks,
+              'pending',
+              'Export pending care plan conversions as Excel'
+            )}
+            {renderStackExpandButton('main')}
           </span>
         </h3>
 
@@ -1002,6 +1059,14 @@ export function CarePlanConversionPanel({
             <span className="hc-epic-split-panel-title-main">
               Care Plan Conversion Complete
               <span className="hc-epic-split-panel-count">{completedPatientLinks.length}</span>
+            </span>
+            <span className="hc-epic-split-panel-title-actions">
+              {renderPanelExportButton(
+                completedPatientLinks,
+                'completed',
+                'Export completed care plan conversions as Excel'
+              )}
+              {renderStackExpandButton('split')}
             </span>
           </h3>
           {patientLinks.length === 0 || filteredPatientLinks.length === 0 ? null : completedPatientLinks.length === 0 ? (

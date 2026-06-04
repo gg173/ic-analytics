@@ -6,8 +6,6 @@ export interface UserAccess {
   isAppAdmin: boolean;
   isUhn: boolean;
   isSpo: boolean;
-  /** UHN billing rules / push destinations admin (UHN Admin or App Admin). */
-  canManageHomecareRules: boolean;
   /** Epic ↔ VHA SSDB ICL name mappings (App Admin, UHN Admin, or VHA Admin). */
   canManageEpicIclMaps: boolean;
   isUhnAdmin: boolean;
@@ -37,10 +35,9 @@ export function resolveUserAccess(
 
   const isUhn = isAppAdmin || slug === 'uhn';
   const isSpo = slug === 'spo' && !isAppAdmin;
-  const canManageHomecareRules = isAppAdmin || role === 'uhn_admin';
   const canManageEpicIclMaps =
     isAppAdmin || role === 'uhn_admin' || role === 'vha_admin';
-  const isUhnAdmin = canManageHomecareRules;
+  const isUhnAdmin = isAppAdmin || role === 'uhn_admin';
   const canEdit =
     isAppAdmin || (slug === 'uhn' && (role === 'uhn_editor' || role === 'uhn_admin'));
 
@@ -53,7 +50,6 @@ export function resolveUserAccess(
     isAppAdmin,
     isUhn,
     isSpo,
-    canManageHomecareRules,
     canManageEpicIclMaps,
     isUhnAdmin,
     canEdit,

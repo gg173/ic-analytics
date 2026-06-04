@@ -24,7 +24,7 @@ export interface EpicConversionParseResult {
  * strings (ambiguous) and timezone shifts from JS Date conversion. The row
  * mapper (parseDate) normalizes Excel serials and ISO/dmy strings in UTC.
  */
-function parseRawSheet(buf: ArrayBuffer): {
+export function parseRawSheet(buf: ArrayBuffer): {
   headers: string[];
   rows: Record<string, unknown>[];
   errors: string[];

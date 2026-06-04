@@ -1,6 +1,4 @@
-import {
-  EPIC_CONVERSION_TEMPLATE_MARKERS,
-} from './classifyCarePlanContent';
+import { stripEpicConversionTemplateMarkers } from './classifyCarePlanContent';
 
 export interface TemplatedCarePlanFields {
   service: string | null;
@@ -51,21 +49,9 @@ interface LabelSpan {
   length: number;
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 function withGlobalFlag(pattern: RegExp): RegExp {
   if (pattern.global) return pattern;
   return new RegExp(pattern.source, `${pattern.flags}g`);
-}
-
-function stripTemplateMarkers(text: string): string {
-  let result = text;
-  for (const marker of EPIC_CONVERSION_TEMPLATE_MARKERS) {
-    result = result.replace(new RegExp(escapeRegExp(marker), 'g'), '');
-  }
-  return result.trim();
 }
 
 function findFieldLabelSpans(text: string): LabelSpan[] {
@@ -115,7 +101,7 @@ export function parseTemplatedCarePlanFields(
   const trimmed = clientNeedsGoals?.trim();
   if (!trimmed) return emptyFields();
 
-  const text = stripTemplateMarkers(trimmed);
+  const text = stripEpicConversionTemplateMarkers(trimmed);
   const spans = findFieldLabelSpans(text);
   const fields = emptyFields();
 

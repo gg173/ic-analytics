@@ -513,6 +513,36 @@ export function useEpicConversionRecords() {
     []
   );
 
+  const clearCarePlanCompletionForRecords = useCallback(async (ids: string[]) => {
+    if (ids.length === 0) {
+      return { error: null as string | null, clearedCount: 0 };
+    }
+
+    const { error: updateError } = await supabase
+      .from('epic_conversion_records')
+      .update({ care_plan_completed_by: null, care_plan_completed_at: null })
+      .in('id', ids);
+
+    if (updateError) {
+      return { error: updateError.message, clearedCount: 0 };
+    }
+
+    const idSet = new Set(ids);
+    setRecords((prev) =>
+      prev.map((r) =>
+        idSet.has(r.id)
+          ? {
+              ...r,
+              care_plan_completed_by: null,
+              care_plan_completed_at: null,
+              updated_at: new Date().toISOString(),
+            }
+          : r
+      )
+    );
+    return { error: null as string | null, clearedCount: ids.length };
+  }, []);
+
   const deleteImport = useCallback(
     async (sourceFilename: string, importedAt: string) => {
       const { error: deleteError } = await supabase
@@ -536,6 +566,7 @@ export function useEpicConversionRecords() {
     insertRows,
     setCompletion,
     setCarePlanCompletion,
+    clearCarePlanCompletionForRecords,
     changeFromDischargePending,
     changeFromEpisodeConversionPending,
     setDischargeDetails,

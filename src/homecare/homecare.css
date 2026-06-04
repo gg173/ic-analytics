@@ -263,7 +263,7 @@
   flex: 1 1 auto;
   width: 100%;
   min-width: 0;
-  padding: 0.75rem 0 1.5rem;
+  padding: 0.75rem 0 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -284,11 +284,26 @@
   overflow-y: auto;
 }
 
-/* Split layout: header/imports/toolbar stay put, tabs + table sit outside the
-   scrolling page so the strategy tabs remain fixed while the table scrolls. */
+/* Split layout: strategy tabs stay in a fixed header band; tab content fills
+   the remaining main area below. */
 .hc-page--split {
   flex: 0 0 auto;
   overflow-y: visible;
+}
+
+.hc-epic-page-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  width: 100%;
+  height: 100%;
+  margin-top: 10px;
+  padding: 20px;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .hc-table-wrap--fill {
@@ -338,6 +353,733 @@
   overflow: auto;
 }
 
+.hc-service-data-conversion {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.hc-service-data-layout {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.hc-service-data-layout--has-selection {
+  flex-direction: row;
+  align-items: stretch;
+  gap: 1rem;
+}
+
+.hc-service-data-layout--has-selection .hc-service-data-calendar {
+  flex: 1 1 0;
+  width: auto;
+  max-width: none;
+  min-width: 0;
+}
+
+.hc-service-data-selection-panel {
+  flex: 0 0 25vw;
+  width: 25vw;
+  max-width: 25vw;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: 0;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.75rem;
+}
+
+.hc-service-data-selection-panel-header {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  min-height: 2.5rem;
+  padding: 0.4rem 0.5rem;
+  box-sizing: border-box;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.hc-service-data-selection-panel-title {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #0f172a;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hc-service-data-selection-panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+}
+
+.hc-service-data-selection-panel-header .hc-service-data-selection-panel-filter.hc-checkbox-label {
+  flex: 0 1 5.25rem;
+  max-width: 5.25rem;
+  min-height: 2rem;
+  padding: 0.2rem 0;
+  box-sizing: border-box;
+  font-size: 0.5rem;
+  line-height: 1.25;
+  gap: 0.2rem;
+  color: #475569;
+  white-space: normal;
+  align-items: center;
+}
+
+.hc-service-data-selection-panel-header .hc-service-data-selection-panel-filter input[type='checkbox'] {
+  width: 0.875rem;
+  height: 0.875rem;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.hc-service-data-selection-panel-tabs.hc-strategy-tabs {
+  flex-shrink: 0;
+  margin-bottom: 0;
+  gap: 0.15rem;
+  padding: 0.15rem 0.35rem 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.hc-service-data-selection-panel-tabs .hc-strategy-tabs-list {
+  gap: 0.15rem;
+}
+
+.hc-service-data-selection-panel-tabs .hc-strategy-tab {
+  font-size: 0.6875rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 6px 6px 0 0;
+  gap: 0.25rem;
+}
+
+.hc-service-data-selection-panel-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0.2rem 0;
+  list-style: none;
+  overflow: auto;
+}
+
+.hc-service-data-selection-panel-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.hc-service-data-selection-panel-item:last-child {
+  border-bottom: none;
+}
+
+.hc-service-data-selection-panel-item-date {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.hc-service-data-selection-panel-item-counts {
+  font-size: 0.625rem;
+  color: #64748b;
+  line-height: 1.2;
+}
+
+.hc-service-data-selection-panel-table-wrap {
+  margin-top: 0.15rem;
+  overflow-x: auto;
+}
+
+.hc-service-data-selection-panel-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.625rem;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+}
+
+.hc-service-data-selection-panel-table thead th,
+.hc-service-data-selection-panel-table tbody td {
+  padding: 0.12rem 0.2rem;
+  text-align: center;
+  vertical-align: middle;
+  border: 1px solid #e2e8f0;
+}
+
+.hc-service-data-selection-panel-table thead th {
+  font-size: 0.5625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #94a3b8;
+  background: #f8fafc;
+}
+
+.hc-service-data-selection-panel-table tbody td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-service-data-selection-panel-table .hc-table-sort {
+  justify-content: center;
+  width: 100%;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #94a3b8;
+}
+
+.hc-service-data-selection-panel-table .hc-table-sort:hover {
+  color: #1d4ed8;
+}
+
+.hc-service-data-selection-panel-table-cp-col {
+  width: 2.25rem;
+}
+
+.hc-service-data-selection-panel-table-mrn-col {
+  width: 5rem;
+  min-width: 5rem;
+}
+
+.hc-service-data-selection-panel-table-pathway-col {
+  width: 24%;
+}
+
+.hc-service-data-selection-panel-table-ic-lead-col {
+  width: auto;
+}
+
+.hc-service-data-selection-panel-table-date-col {
+  width: 3.25rem;
+  min-width: 3.25rem;
+}
+
+.hc-service-data-selection-panel-table-srv-disc-col {
+  width: auto;
+}
+
+.hc-service-data-selection-panel-table-cp-col .hc-reconcile-check {
+  width: 1.125rem;
+  height: 1.125rem;
+  font-size: 0.7rem;
+}
+
+.hc-service-data-selection-panel-table-loading,
+.hc-service-data-selection-panel-table-empty {
+  color: #94a3b8;
+}
+
+.hc-service-data-calendar {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 0;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.75rem;
+}
+
+.hc-service-data-calendar-nav {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  align-self: stretch;
+  width: 100%;
+  box-sizing: border-box;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+.hc-service-data-calendar-month {
+  margin: 0;
+  min-width: 7rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #0f172a;
+  text-align: center;
+}
+
+.hc-service-data-calendar-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+}
+
+.hc-service-data-calendar-nav-btn:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+
+.hc-service-data-calendar-nav-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.hc-service-data-calendar-nav-btn svg {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.hc-service-data-calendar-grid {
+  display: grid;
+  grid-template-columns: 1.1fr repeat(7, 1fr);
+  grid-template-rows: auto repeat(var(--hc-service-data-calendar-week-rows, 5), minmax(0, 1fr));
+  gap: 0;
+  flex: 1 1 0;
+  min-height: 0;
+  align-self: stretch;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  border-top: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+
+.hc-service-data-calendar-dow {
+  padding: 0.35rem 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-align: center;
+  text-transform: uppercase;
+  color: #64748b;
+  border-right: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.hc-service-data-calendar-grid > :nth-child(8n) {
+  border-right: none;
+}
+
+.hc-service-data-calendar-grid > :nth-last-child(-n + 8) {
+  border-bottom: none;
+}
+
+.hc-service-data-calendar-dow--gutter {
+  padding: 0.35rem 0.35rem 0.35rem;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  background: #f1f5f9;
+  text-align: left;
+  text-transform: none;
+  font-weight: 400;
+  color: #475569;
+}
+
+.hc-service-data-calendar-month-summary-badge .hc-service-data-calendar-day-num {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.hc-service-data-calendar-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.2rem;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0.35rem 0.35rem 0.35rem;
+  border-right: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.hc-service-data-calendar-cell--gutter {
+  background: #f1f5f9;
+}
+
+.hc-service-data-calendar-week-label-heading,
+.hc-service-data-calendar-week-label-dates {
+  white-space: nowrap;
+}
+
+.hc-service-data-calendar-week-summary-badge .hc-service-data-calendar-week-label-heading,
+.hc-service-data-calendar-week-summary-badge .hc-service-data-calendar-week-label-dates,
+.hc-service-data-calendar-month-summary-badge .hc-service-data-calendar-week-label-heading,
+.hc-service-data-calendar-month-summary-badge .hc-service-data-calendar-week-label-dates {
+  font-size: 0.5rem;
+  line-height: 1;
+}
+
+.hc-service-data-calendar-week-summary-badge .hc-service-data-calendar-week-label-heading,
+.hc-service-data-calendar-month-summary-badge .hc-service-data-calendar-week-label-heading {
+  font-weight: 400;
+}
+
+.hc-service-data-calendar-week-summary-badge .hc-service-data-calendar-week-label-dates,
+.hc-service-data-calendar-month-summary-badge .hc-service-data-calendar-week-label-dates {
+  font-weight: 600;
+}
+
+.hc-service-data-calendar-cell--empty {
+  min-height: 0;
+}
+
+.hc-service-data-calendar-cell--today {
+  background: #eff6ff;
+}
+
+.hc-service-data-calendar-cell--selected {
+  background: rgba(125, 211, 252, 0.12);
+}
+
+.hc-service-data-calendar-cell--selected.hc-service-data-calendar-cell--today {
+  background: rgba(56, 189, 248, 0.16);
+}
+
+.hc-service-data-calendar-selection-border {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.hc-service-data-calendar-selection-border--top {
+  border-top: 3px solid #2563eb;
+}
+
+.hc-service-data-calendar-selection-border--right {
+  border-right: 3px solid #2563eb;
+}
+
+.hc-service-data-calendar-selection-border--bottom {
+  border-bottom: 3px solid #2563eb;
+}
+
+.hc-service-data-calendar-selection-border--left {
+  border-left: 3px solid #2563eb;
+}
+
+.hc-service-data-calendar-selection-border--corner-tl {
+  border-top-left-radius: 0.625rem;
+}
+
+.hc-service-data-calendar-selection-border--corner-tr {
+  border-top-right-radius: 0.625rem;
+}
+
+.hc-service-data-calendar-selection-border--corner-bl {
+  border-bottom-left-radius: 0.625rem;
+}
+
+.hc-service-data-calendar-selection-border--corner-br {
+  border-bottom-right-radius: 0.625rem;
+}
+
+.hc-service-data-calendar-day-header {
+  align-self: stretch;
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.hc-service-data-calendar-day-header-top {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+}
+
+.hc-service-data-calendar-day-stats {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  width: 100%;
+  flex: 0 0 2.25rem;
+  min-height: 2.25rem;
+  max-height: 2.25rem;
+  gap: 0;
+}
+
+.hc-service-data-calendar-day-body {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0.35rem;
+  align-self: stretch;
+  width: 100%;
+  height: 100%;
+  min-height: 2.25rem;
+  z-index: 1;
+  padding: 0.05rem 0.15rem;
+  box-sizing: border-box;
+}
+
+.hc-service-data-calendar-templated-badge {
+  flex: 0 0 auto;
+  align-self: stretch;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0.2rem;
+  width: 100%;
+  max-width: 100%;
+  height: 2.25rem;
+  min-height: 2.25rem;
+  max-height: 2.25rem;
+  min-width: 3.5rem;
+  padding: 0.15rem 0.2rem;
+  border-radius: 0.25rem;
+  border: 1px solid transparent;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  line-height: 1.2;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.hc-service-data-calendar-templated-badge-label {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  align-self: stretch;
+  margin-right: 0.25rem;
+  padding-right: 0.25rem;
+  border-right: 1px solid currentColor;
+  font-size: 0.5625rem;
+  font-weight: 500;
+  line-height: 1.1;
+  text-align: right;
+  opacity: 0.85;
+  overflow: hidden;
+}
+
+.hc-service-data-calendar-templated-badge-content {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  gap: 0;
+  height: 100%;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.hc-service-data-calendar-templated-badge-percent,
+.hc-service-data-calendar-templated-badge-fraction {
+  text-align: center;
+}
+
+.hc-service-data-calendar-templated-badge-percent {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.hc-service-data-calendar-templated-badge-fraction {
+  font-size: 0.5rem;
+  font-weight: 600;
+  line-height: 1.1;
+  opacity: 0.9;
+}
+
+.hc-service-data-calendar-templated-badge--loading {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+  color: #94a3b8;
+}
+
+.hc-service-data-calendar-day-summary-badge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+  width: 100%;
+  min-height: 1.125rem;
+  padding: 0.1rem 0.35rem;
+  border: none;
+  background: transparent;
+  color: #475569;
+  font-size: 0.5rem;
+  line-height: 1.1;
+  box-sizing: border-box;
+}
+
+.hc-service-data-calendar-day-summary-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.hc-service-data-calendar-day-summary-badge--loading {
+  color: #94a3b8;
+}
+
+.hc-service-data-calendar-day-summary-badge .hc-service-data-calendar-day-num {
+  flex-shrink: 0;
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0;
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1;
+  color: inherit;
+}
+
+.hc-service-data-calendar-day-num-day,
+.hc-service-data-calendar-day-num-month {
+  white-space: nowrap;
+}
+
+.hc-service-data-calendar-day-summary-badge .hc-service-data-calendar-day-num-month {
+  font-size: 0.5rem;
+  font-weight: 400;
+}
+
+.hc-service-data-calendar-day-summary-sep {
+  flex-shrink: 0;
+  align-self: stretch;
+  width: 1px;
+  min-height: 0.875rem;
+  margin: 0 0.3rem;
+  background: #cbd5e1;
+}
+
+.hc-service-data-calendar-cell--today .hc-service-data-calendar-day-summary-sep {
+  background: #93c5fd;
+}
+
+.hc-service-data-calendar-visit-count {
+  flex-shrink: 0;
+  font-weight: 700;
+}
+
+.hc-service-data-calendar-cell--today .hc-service-data-calendar-day-summary-badge {
+  color: #1d4ed8;
+}
+
+.hc-service-data-calendar-day-checkbox {
+  flex-shrink: 0;
+  width: auto;
+  height: auto;
+  min-width: 1.125rem;
+  aspect-ratio: 1;
+  margin: 0;
+  cursor: pointer;
+}
+
+.hc-service-data-calendar-day-summary-badge .hc-service-data-calendar-day-checkbox {
+  align-self: center;
+  width: 0.7rem;
+  height: 0.7rem;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.hc-service-data-calendar-counts {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.hc-service-data-calendar-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #f8fafc;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.hc-service-data-calendar-count--has-data {
+  border-color: #3b82f6;
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.hc-service-data-calendar-count--patients.hc-service-data-calendar-count--has-data {
+  border-color: #059669;
+  background: #d1fae5;
+  color: #047857;
+}
+
+.hc-service-data-calendar-error {
+  margin: 0;
+  padding: 0.35rem 0.5rem;
+}
+
+.hc-care-plan-conversion-stack.hc-epic-table-stack--main-expanded {
+  grid-template-rows: minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.hc-care-plan-conversion-stack.hc-epic-table-stack--split-expanded {
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
 .hc-care-plan-conversion-stack .hc-care-plan-conversion {
   width: 100%;
   max-width: 100%;
@@ -375,6 +1117,24 @@
 .hc-care-plan-conversion .hc-toolbar {
   padding-inline: 1rem;
   margin-bottom: 0.75rem;
+}
+
+.hc-care-plan-conversion .hc-toolbar .hc-toolbar-clear {
+  margin-left: 0;
+}
+
+.hc-care-plan-conversion .hc-toolbar .hc-care-plan-toolbar-export-btn {
+  flex: 0 0 auto;
+  margin-left: auto;
+  height: 28px;
+  min-width: 2.5rem;
+  padding: 0 0.5rem;
+  border-radius: 6px;
+}
+
+.hc-care-plan-conversion .hc-toolbar .hc-care-plan-toolbar-export-btn svg {
+  width: 1.15em;
+  height: 1.15em;
 }
 
 .hc-care-plan-conversion .hc-toolbar label.hc-search--care-plan {
@@ -537,6 +1297,13 @@
 
 .hc-care-plan-conversion .hc-table--care-plan-patients thead th {
   font-size: 0.65rem;
+}
+
+.hc-care-plan-conversion
+  .hc-table--care-plan-patients:not(.hc-table--care-plan-patients-completed)
+  thead
+  th {
+  border-top: 1px solid #e2e8f0;
 }
 
 .hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-mrn,
@@ -902,12 +1669,15 @@
 }
 
 .hc-epic-table-stack--main-expanded .hc-epic-split-tables .hc-epic-split-panel,
+.hc-epic-table-stack--main-expanded .hc-care-plan-split-tables .hc-epic-split-panel,
 .hc-epic-table-stack--main-expanded > .hc-epic-split-panel:not(.hc-epic-split-panel--main) {
   height: auto;
 }
 
 .hc-epic-table-stack--main-expanded .hc-epic-split-tables .hc-table-wrap,
 .hc-epic-table-stack--main-expanded .hc-epic-split-tables .hc-epic-split-panel-empty,
+.hc-epic-table-stack--main-expanded .hc-care-plan-split-tables .hc-table-wrap,
+.hc-epic-table-stack--main-expanded .hc-care-plan-split-tables .hc-epic-split-panel-empty,
 .hc-epic-table-stack--main-expanded
   > .hc-epic-split-panel:not(.hc-epic-split-panel--main)
   .hc-table-wrap,
@@ -932,18 +1702,27 @@
 }
 
 .hc-epic-table-stack--split-expanded .hc-epic-split-tables .hc-epic-split-panel,
+.hc-epic-table-stack--split-expanded .hc-care-plan-split-tables .hc-epic-split-panel,
 .hc-epic-table-stack--split-expanded > .hc-epic-split-panel:not(.hc-epic-split-panel--main) {
   height: 100%;
   min-height: 0;
 }
 
 .hc-epic-table-stack--split-expanded .hc-epic-split-tables .hc-table-wrap,
+.hc-epic-table-stack--split-expanded .hc-care-plan-split-tables .hc-table-wrap,
 .hc-epic-table-stack--split-expanded
   > .hc-epic-split-panel:not(.hc-epic-split-panel--main)
   .hc-table-wrap {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+}
+
+.hc-epic-table-stack--split-expanded .hc-care-plan-split-tables {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .hc-btn.hc-epic-split-panel-expand {
@@ -1490,13 +2269,13 @@ button.hc-epic-split-panel-count--active {
 
 .hc-strategy-tabs--below-title {
   margin-top: 0;
-  margin-bottom: 1rem;
 }
 
 .hc-import-panels {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
+  flex-direction: column;
   align-items: stretch;
   gap: 1rem;
   align-self: center;
@@ -1508,12 +2287,204 @@ button.hc-epic-split-panel-count--active {
   box-sizing: border-box;
 }
 
+.hc-import-panels .hc-import-panel--consolidated {
+  padding: 0.75rem 1rem 1rem;
+}
+
+.hc-import-panel--consolidated > .hc-form-error,
+.hc-import-panel--consolidated > .hc-info {
+  margin: 0 0 0.5rem;
+}
+
+.hc-import-panel--consolidated > .hc-import-column-body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.hc-import-panel-header {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.hc-import-table-block {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.hc-import-panels .hc-import-panel-header .hc-import-upload-btn {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.8125rem;
+  line-height: 1;
+}
+
+.hc-import-panels .hc-import-panel-header .hc-import-upload-btn svg {
+  width: 1.125em;
+  height: 1.125em;
+  font-size: 1.125rem;
+  flex-shrink: 0;
+}
+
+.hc-col-import-type {
+  min-width: 11rem;
+  max-width: 14rem;
+  white-space: normal;
+  line-height: 1.2;
+  text-align: left;
+}
+
+.hc-table--import .hc-col-import-type {
+  text-align: left;
+}
+
+.hc-modal.hc-modal--consolidated-import {
+  width: min(32rem, 100%);
+  max-width: min(32rem, 100%);
+  max-height: none;
+  padding: 0;
+  gap: 0.75rem;
+  border: none;
+}
+
+.hc-modal--consolidated-import .hc-enrolment-upload-status {
+  align-self: stretch;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 10rem;
+  padding: 2rem 1.5rem;
+}
+
+.hc-modal--consolidated-import .hc-enrolment-upload-status--success {
+  min-height: 10rem;
+  padding: 2rem 1.5rem;
+}
+
+.hc-consolidated-import-header {
+  position: relative;
+  flex-shrink: 0;
+  min-height: 2.75rem;
+  padding: 0.5rem 1.5rem;
+  background: #292a3f;
+  color: #fff;
+}
+
+.hc-modal--consolidated-import .hc-consolidated-import-header .hc-enrolment-upload-actions-title {
+  position: absolute;
+  left: 1.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: calc(100% - 4.5rem);
+  margin: 0;
+  text-align: left;
+  color: #fff;
+}
+
+.hc-modal--consolidated-import .hc-consolidated-import-header .hc-enrolment-upload-close {
+  position: absolute;
+  right: 1.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: auto;
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: 0.2rem 0.45rem;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: #fff;
+}
+
+.hc-modal--consolidated-import .hc-consolidated-import-header .hc-enrolment-upload-close:hover,
+.hc-modal--consolidated-import .hc-consolidated-import-header .hc-enrolment-upload-close:focus-visible {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.hc-consolidated-import-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 0 1.5rem 1.5rem;
+}
+
+.hc-consolidated-import-row {
+  display: grid;
+  grid-template-columns: minmax(10.5rem, 42%) minmax(0, 1fr);
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.hc-consolidated-import-row-label {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.hc-consolidated-import-row-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #0f172a;
+  line-height: 1.2;
+  min-width: 0;
+}
+
+.hc-consolidated-import-info-btn.hc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  min-width: 1.5rem;
+  padding: 0;
+}
+
+.hc-consolidated-import-info-btn svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.hc-consolidated-import-info-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.hc-consolidated-import-file.hc-enrolment-upload-file {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  min-height: 2.25rem;
+  justify-content: flex-start;
+}
+
+.hc-consolidated-import-file .hc-enrolment-upload-file-label {
+  text-align: left;
+}
+
+.hc-modal--consolidated-import .hc-consolidated-import-rows .hc-btn-primary {
+  flex-shrink: 0;
+  width: 100%;
+}
+
 .hc-import-panels .hc-import-panel {
   flex: 1 1 0;
   min-width: 0;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(11rem, 15rem) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
   gap: 0;
   padding: 0;
   width: auto;
@@ -1571,26 +2542,189 @@ button.hc-epic-split-panel-count--active {
 }
 
 .hc-import-panels .hc-import-column-header {
-  position: relative;
+  grid-column: 1;
+  grid-row: 1 / -1;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: flex-end;
-  padding: 0.4rem;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: #f8fafc;
+  border-right: 1px solid #e2e8f0;
+}
+
+.hc-import-column-title-row {
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0.2rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.hc-import-panels .hc-import-column-header .hc-import-column-title-row .hc-import-column-title {
+  align-self: center;
+  text-align: left;
+  line-height: 1.15;
 }
 
 .hc-import-panels .hc-import-column-header .hc-import-column-title {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
+  position: static;
+  transform: none;
   text-align: center;
-  max-width: calc(100% - 5rem);
-  pointer-events: none;
+  width: auto;
+  max-width: none;
+  pointer-events: auto;
+  margin: 0;
+}
+
+.hc-import-panels .hc-import-column-header .hc-import-column-info-btn.hc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  flex-shrink: 0;
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  aspect-ratio: 1;
+  padding: 0.05rem;
+  border: none;
+  line-height: 1;
+  font-size: 0;
+  color: #64748b;
+}
+
+.hc-import-panels .hc-import-column-header .hc-import-column-info-btn svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  flex-shrink: 0;
+}
+
+.hc-import-panels .hc-import-column-header .hc-import-column-info-btn:hover,
+.hc-import-panels .hc-import-column-header .hc-import-column-info-btn:focus-visible {
+  color: #1d4ed8;
+  background: transparent;
+}
+
+.hc-import-panels .hc-import-panel > .hc-import-column-body,
+.hc-import-panels .hc-import-panel > .hc-form-error,
+.hc-import-panels .hc-import-panel > .hc-info {
+  grid-column: 2;
+}
+
+.hc-import-panels .hc-import-panel > .hc-import-column-body {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.hc-import-panels .hc-import-panel.hc-import-panel--consolidated {
+  display: flex;
+  flex-direction: column;
+  grid-template-columns: unset;
+  grid-template-rows: unset;
+}
+
+.hc-import-panels .hc-import-panel.hc-import-panel--consolidated > .hc-import-column-body,
+.hc-import-panels .hc-import-panel.hc-import-panel--consolidated > .hc-form-error,
+.hc-import-panels .hc-import-panel.hc-import-panel--consolidated > .hc-info {
+  grid-column: auto;
+  width: 100%;
+}
+
+.hc-import-panel--consolidated .hc-import-table-block,
+.hc-import-panel--consolidated .hc-import-table-wrap,
+.hc-import-panel--consolidated .hc-table--import {
+  width: 100%;
+}
+
+.hc-import-panel--consolidated .hc-table--import {
+  table-layout: fixed;
+}
+
+.hc-import-panel--consolidated .hc-table--import th,
+.hc-import-panel--consolidated .hc-table--import td {
+  min-width: 0;
+  overflow: hidden;
+  vertical-align: middle;
+}
+
+.hc-import-panel--consolidated .hc-table--import .hc-col-import-type {
+  width: 16%;
+  min-width: 0;
+  max-width: none;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.hc-import-panel--consolidated .hc-table--import thead .hc-col-import-type,
+.hc-import-panel--consolidated .hc-table--import tbody .hc-col-import-type {
+  text-align: left;
+}
+
+.hc-import-panel--consolidated .hc-table--import .hc-col-import-date {
+  width: 11%;
+  min-width: 0;
+  max-width: none;
+  white-space: normal;
+  text-align: center;
+}
+
+.hc-import-panel--consolidated .hc-table--import .hc-col-import-by {
+  width: 10%;
+  min-width: 0;
+  max-width: none;
+  text-align: left;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.hc-import-panel--consolidated .hc-table--import thead .hc-col-import-by,
+.hc-import-panel--consolidated .hc-table--import tbody .hc-col-import-by {
+  text-align: left;
+}
+
+.hc-import-panel--consolidated .hc-table--import .hc-col-import-filename {
+  width: 39%;
+  min-width: 0;
+  max-width: none;
+  text-align: left;
+}
+
+.hc-import-panel--consolidated .hc-table--import thead .hc-col-import-filename,
+.hc-import-panel--consolidated .hc-table--import tbody .hc-col-import-filename {
+  text-align: left;
+}
+
+.hc-import-panel--consolidated .hc-table--import .hc-col-import-rows {
+  width: 7%;
+  min-width: 0;
+  max-width: none;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.hc-import-panel--consolidated .hc-table--import .hc-col-import-actions {
+  width: 17%;
+  min-width: 0;
+  max-width: none;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.hc-import-panel--consolidated .hc-import-filename {
+  max-width: 100%;
 }
 
 .hc-import-column-title {
   margin: 0;
   font-size: 0.95rem;
   font-weight: 600;
+  line-height: 1.15;
   color: #1e293b;
 }
 
@@ -1612,8 +2746,10 @@ button.hc-epic-split-panel-count--active {
 }
 
 .hc-table--import {
+  table-layout: auto;
+  width: 100%;
   height: auto;
-  font-size: 0.75rem;
+  font-size: 0.65rem;
 }
 
 .hc-table--import tbody tr,
@@ -1624,7 +2760,8 @@ button.hc-epic-split-panel-count--active {
 .hc-table--import th,
 .hc-table--import td {
   vertical-align: middle;
-  padding: 0.4rem 0.55rem;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.65rem;
 }
 
 .hc-table--import thead th {
@@ -1636,12 +2773,65 @@ button.hc-epic-split-panel-count--active {
 }
 
 .hc-table--import th {
-  font-size: 0.7rem;
+  font-size: 0.625rem;
+}
+
+.hc-table--import .hc-col-import-date,
+.hc-table--import .hc-col-import-by,
+.hc-table--import .hc-col-import-rows,
+.hc-table--import .hc-col-import-actions {
+  text-align: center;
 }
 
 .hc-table--import .hc-col-import-rows,
 .hc-table--import .hc-col-import-actions {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.hc-col-import-date,
+.hc-col-import-by {
   text-align: center;
+}
+
+.hc-col-import-date {
+  width: 9.5rem;
+  white-space: normal;
+}
+
+.hc-import-uploaded-date {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+}
+
+.hc-import-uploaded-date-day,
+.hc-import-uploaded-date-time {
+  display: block;
+}
+
+.hc-import-uploaded-date-day {
+  line-height: 1.15;
+}
+
+.hc-import-uploaded-date-time {
+  line-height: 1;
+  margin-top: 0.05rem;
+  color: #64748b;
+}
+
+.hc-col-import-by {
+  width: 8rem;
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-col-import-filename {
+  min-width: 0;
+  max-width: 14rem;
 }
 
 .hc-col-import-rows {
@@ -1650,7 +2840,26 @@ button.hc-epic-split-panel-count--active {
 }
 
 .hc-col-import-actions {
-  width: 11rem;
+  width: 4.75rem;
+}
+
+.hc-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem;
+  min-width: 1.75rem;
+  line-height: 1;
+}
+
+.hc-btn-icon svg {
+  width: 1.125em;
+  height: 1.125em;
+}
+
+.hc-table--import .hc-table-actions {
+  flex-wrap: nowrap;
+  gap: 0.25rem;
 }
 
 .hc-import-upload-cell {
@@ -1668,6 +2877,13 @@ button.hc-epic-split-panel-count--active {
   font-size: 0.75rem;
   font-weight: 600;
   color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-table--import .hc-import-filename {
+  font-size: 0.65rem;
 }
 
 .hc-import-upload-meta {
@@ -1680,10 +2896,12 @@ button.hc-epic-split-panel-count--active {
 }
 
 .hc-table--import .hc-import-empty-cell .hc-muted {
-  font-size: 0.75rem;
+  font-size: 0.65rem;
 }
 
-.hc-progress-tracker {
+.hc-progress-tracker,
+.hc-billing-overview,
+.hc-billing-import-data {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
@@ -1695,6 +2913,10 @@ button.hc-epic-split-panel-count--active {
   border: none;
   gap: 1rem;
   overflow: hidden;
+}
+
+.hc-billing-import-data {
+  overflow: auto;
 }
 
 .hc-progress-section {
@@ -2713,6 +3935,11 @@ button.hc-reconcile-stat--active {
   color: #fff;
 }
 
+.hc-upload-type-badge--emri {
+  background: #0d9488;
+  color: #fff;
+}
+
 .hc-panel {
   background: #fff;
   border: 1px solid #e2e8f0;
@@ -2788,21 +4015,46 @@ button.hc-btn {
   background: #1e40af;
 }
 
-.hc-import-panels .hc-import-column-header .hc-btn-primary {
-  background: rgba(84, 94, 110, 0.8);
+.hc-import-panels .hc-import-column-header .hc-btn-primary.hc-import-upload-btn {
+  background: rgba(255, 255, 255, 0.55);
+  border-color: rgba(226, 232, 240, 0.9);
+  color: #475569;
 }
 
 .hc-import-panels .hc-import-column-header .hc-import-upload-btn {
   display: inline-flex;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  padding: 0.45rem 0.55rem;
-  font-size: 1.25rem;
+  gap: 0.25rem;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.75rem;
   line-height: 1;
 }
 
-.hc-import-panels .hc-import-column-header .hc-btn-primary:hover {
+.hc-import-upload-btn-label {
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.hc-import-panels .hc-import-column-header .hc-import-upload-btn:hover .hc-import-upload-btn-label,
+.hc-import-panels .hc-import-column-header .hc-import-upload-btn:focus-visible .hc-import-upload-btn-label {
+  font-weight: 600;
+}
+
+.hc-import-panels .hc-import-column-header .hc-import-upload-btn svg {
+  width: 1.125em;
+  height: 1.125em;
+  font-size: 1.125rem;
+  flex-shrink: 0;
+}
+
+.hc-import-panels .hc-import-column-header .hc-btn-primary.hc-import-upload-btn:hover,
+.hc-import-panels .hc-import-column-header .hc-btn-primary.hc-import-upload-btn:focus-visible {
   background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #fff;
 }
 
 .hc-btn-secondary {
@@ -2822,9 +4074,24 @@ button.hc-btn {
   border: 1px solid #fecaca;
 }
 
+.hc-btn-danger.hc-btn-icon {
+  color: #334155;
+  border-color: #cbd5e1;
+}
+
 .hc-btn-danger:hover:not(:disabled) {
   background: #fef2f2;
   border-color: #fca5a5;
+}
+
+.hc-btn-danger.hc-btn-icon:hover:not(:disabled) {
+  color: #b91c1c;
+}
+
+.hc-btn-secondary.hc-btn-icon-download:hover:not(:disabled) {
+  color: #0f766e;
+  background: #f0fdfa;
+  border-color: #5eead4;
 }
 
 .hc-btn-success {
@@ -2880,12 +4147,24 @@ button.hc-btn {
   border-radius: 0;
   background: #fff;
   box-shadow: none;
-  overflow: hidden;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+.hc-table-wrap.hc-import-table-wrap .hc-table th,
+.hc-table-wrap.hc-import-table-wrap .hc-table td {
+  padding: 0.25rem 0.4rem;
+  font-size: 0.65rem;
+}
+
+.hc-table-wrap.hc-import-table-wrap .hc-table thead th {
+  font-size: 0.625rem;
 }
 
 .hc-table-wrap.hc-import-table-wrap .hc-table thead th {
   border: none;
-  border-top: 1px solid #e2e8f0;
   border-bottom: 1px solid #e2e8f0;
 }
 
@@ -2959,7 +4238,6 @@ button.hc-btn {
 
 .hc-table--grid.hc-table--import thead th {
   border: none;
-  border-top: 1px solid #e2e8f0;
   border-bottom: 1px solid #e2e8f0;
 }
 
@@ -2998,12 +4276,15 @@ button.hc-btn {
   border-right: none;
 }
 
+.hc-table--grid.hc-table--import .hc-col-import-date,
+.hc-table--grid.hc-table--import .hc-col-import-by,
 .hc-table--grid.hc-table--import .hc-col-import-rows,
 .hc-table--grid.hc-table--import .hc-col-import-actions {
   text-align: center;
 }
 
 .hc-table--grid.hc-table--import .hc-table-actions {
+  flex-wrap: nowrap;
   justify-content: center;
 }
 
@@ -4566,10 +5847,58 @@ select.hc-cell-input {
 
 .hc-strategy-tabs {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 0.25rem;
   border-bottom: 1px solid #e2e8f0;
   margin-bottom: 1rem;
+}
+
+.hc-strategy-tabs.hc-strategy-tabs--below-title {
+  margin-bottom: 0;
+}
+
+.hc-strategy-tabs-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.hc-strategy-tabs-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  padding: 0.45rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.hc-strategy-tabs-refresh:hover:not(:disabled) {
+  color: #1d4ed8;
+}
+
+.hc-strategy-tabs-refresh:disabled {
+  cursor: wait;
+  opacity: 0.75;
+}
+
+.hc-strategy-tabs-refresh--spinning svg {
+  animation: hc-strategy-tabs-refresh-spin 0.8s linear infinite;
+}
+
+@keyframes hc-strategy-tabs-refresh-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .hc-strategy-tab {
@@ -4936,7 +6265,16 @@ select.hc-cell-input {
 }
 
 .hc-modal--enrolment-upload {
-  width: 90vw;
+  width: min(24rem, 100%);
+  max-width: min(24rem, 100%);
+  max-height: none;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+
+.hc-modal--ssdb-howto {
+  width: min(90vw, 1100px);
   max-width: 90vw;
   max-height: min(92vh, 900px);
   padding-top: 0.2rem;
@@ -4944,13 +6282,21 @@ select.hc-cell-input {
   overflow: auto;
 }
 
-.hc-modal-header--enrolment-upload {
+.hc-modal--ssdb-howto .hc-enrolment-upload-howto-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: calc(92vh - 5rem);
+  object-fit: contain;
+}
+
+.hc-modal-header--ssdb-howto {
   justify-content: flex-end;
   min-height: 0;
   padding-bottom: 0;
 }
 
-.hc-modal--enrolment-upload .hc-modal-close {
+.hc-modal--ssdb-howto .hc-modal-close {
   min-width: 2.5rem;
   min-height: 2.5rem;
   padding: 0.35rem;
@@ -4958,10 +6304,42 @@ select.hc-cell-input {
   line-height: 1;
 }
 
-.hc-enrolment-upload-form-body {
-  display: flex;
-  align-items: stretch;
-  gap: 1rem;
+.hc-modal--ssdb-howto .hc-enrolment-upload-howto {
+  flex: 0 0 auto;
+  width: 100%;
+  min-height: 0;
+}
+
+.hc-modal--enrolment-upload .hc-enrolment-upload-actions {
+  flex: 1 1 auto;
+  align-self: stretch;
+  box-sizing: border-box;
+  border-radius: 12px;
+  position: relative;
+}
+
+.hc-modal--enrolment-upload .hc-enrolment-upload-close {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  z-index: 1;
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+  padding: 0.35rem;
+  font-size: 1.75rem;
+  line-height: 1;
+}
+
+.hc-modal--enrolment-upload .hc-enrolment-upload-actions-title {
+  padding-right: 2.5rem;
+}
+
+.hc-modal--enrolment-upload .hc-enrolment-upload-status {
+  flex: 1 1 auto;
+  align-self: stretch;
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 12px;
 }
 
 .hc-enrolment-upload-howto {
@@ -4980,15 +6358,12 @@ select.hc-cell-input {
 }
 
 .hc-enrolment-upload-actions {
-  flex: 0 0 12.5rem;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  align-self: stretch;
-  min-height: 0;
+  width: 100%;
   gap: 0.75rem;
   padding: 0.85rem;
-  border-radius: 5px;
   background: rgba(84, 94, 110, 0.14);
 }
 
@@ -5049,17 +6424,6 @@ select.hc-cell-input {
 .hc-enrolment-upload-actions .hc-btn-primary {
   flex-shrink: 0;
   width: 100%;
-}
-
-@media (max-width: 640px) {
-  .hc-enrolment-upload-form-body {
-    flex-direction: column;
-  }
-
-  .hc-enrolment-upload-actions {
-    flex: 0 0 auto;
-    width: 100%;
-  }
 }
 
 .hc-enrolment-upload-status {

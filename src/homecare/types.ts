@@ -12,7 +12,6 @@ export type ApprovalType = 'virtual_visit' | 'visit_limit_excess' | 'duration' |
 export type ApprovalStatus = 'pending' | 'approved' | 'denied';
 export type InvestigationOutcome = 'pending' | 'billable' | 'not_billable' | 'payable' | 'not_payable';
 export type AuditAction = 'create' | 'update' | 'delete' | 'status_change' | 'approval' | 'investigation' | 'export' | 'push';
-export type PushJobStatus = 'pending' | 'running' | 'success' | 'failed';
 
 export interface Organization {
   id: string;
@@ -148,74 +147,6 @@ export interface SpoResponse {
   body: string;
   author_id: string;
   created_at: string;
-}
-
-export interface CareStream {
-  id: string;
-  code: string;
-  name: string;
-  visit_limit: number;
-  period_days: number;
-  active: boolean;
-}
-
-export interface RuleTitleDiscipline {
-  id: string;
-  employee_title: string;
-  employee_discipline: string;
-  active: boolean;
-}
-
-export interface RuleVirtualVisitApproval {
-  id: string;
-  employee_discipline: string;
-  visit_type_pattern: string;
-  active: boolean;
-}
-
-export interface RuleVisitStatusBillable {
-  id: string;
-  status_of_visit: string;
-  counts_toward_limit: boolean;
-  exportable: boolean;
-  active: boolean;
-}
-
-export interface RuleCancellationReason {
-  id: string;
-  reason_code: string;
-  requires_investigation: boolean;
-  default_billable: boolean;
-  default_payable: boolean;
-  active: boolean;
-}
-
-export interface RuleDurationBounds {
-  id: string;
-  min_minutes: number;
-  max_minutes: number;
-  active: boolean;
-}
-
-export interface PushDestination {
-  id: string;
-  name: string;
-  destination_type: 'webhook' | 'sftp' | 'api';
-  url: string | null;
-  auth_header_name: string | null;
-  auth_header_value: string | null;
-  active: boolean;
-}
-
-export interface PushJob {
-  id: string;
-  batch_id: string;
-  destination_id: string | null;
-  status: PushJobStatus;
-  attempts: number;
-  response: string | null;
-  created_at: string;
-  completed_at: string | null;
 }
 
 export type VisitFilter =
