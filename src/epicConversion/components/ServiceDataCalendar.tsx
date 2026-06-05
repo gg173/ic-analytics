@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type ReactNode,
 } from 'react';
 import {
   downloadServiceDayPatientsXlsx,
@@ -241,6 +242,90 @@ function templatedPercentHeatmapStyle(percent: number, allDayPercents: number[])
   };
 }
 
+function ServiceIngestStatusFlag({
+  variant,
+  title,
+}: {
+  variant: 'changed' | 'cancelled';
+  title: string;
+}) {
+  return (
+    <span
+      className={`hc-service-data-calendar-ingest-flag hc-service-data-calendar-ingest-flag--${variant}`}
+      title={title}
+      aria-label={title}
+    >
+      <svg
+        className="hc-service-data-calendar-ingest-flag-icon"
+        viewBox="0 0 16 16"
+        width={12}
+        height={12}
+        aria-hidden
+      >
+        <path
+          fill="currentColor"
+          d="M3 1.5v13h1.25V1.5H3zm2.25 0 7.75 3.75-7.75 3.75V1.5Z"
+        />
+      </svg>
+    </span>
+  );
+}
+
+function formatCancellationCountLabel(count: number, scopeLabel: 'day' | 'week'): string {
+  const scope = scopeLabel === 'week' ? ' this week' : '';
+  const noun = count === 1 ? 'cancellation' : 'cancellations';
+  return `${count} ${noun}${scope}`;
+}
+
+function ServiceIngestStatusFlags({
+  hasChangeDetected,
+  cancellationCount,
+  scopeLabel,
+}: {
+  hasChangeDetected: boolean;
+  cancellationCount: number;
+  scopeLabel: 'day' | 'week';
+}) {
+  if (!hasChangeDetected && cancellationCount <= 0) return null;
+
+  const scope = scopeLabel === 'week' ? ' this week' : '';
+
+  return (
+    <>
+      {hasChangeDetected ? (
+        <ServiceIngestStatusFlag
+          variant="changed"
+          title={`Service change detected on re-import${scope}`}
+        />
+      ) : null}
+      {cancellationCount > 0 ? (
+        <>
+          <ServiceIngestStatusFlag
+            variant="cancelled"
+            title={`${formatCancellationCountLabel(cancellationCount, scopeLabel)} in VHA data`}
+          />
+          <span className="hc-service-data-calendar-ingest-flag-label">
+            {formatCancellationCountLabel(cancellationCount, scopeLabel)}
+          </span>
+        </>
+      ) : null}
+    </>
+  );
+}
+
+function serviceIngestStatusAriaSuffix(
+  hasChangeDetected: boolean,
+  cancellationCount: number,
+  scopeLabel: 'day' | 'week'
+): string {
+  const parts: string[] = [];
+  if (hasChangeDetected) parts.push('service change detected');
+  if (cancellationCount > 0) {
+    parts.push(formatCancellationCountLabel(cancellationCount, scopeLabel));
+  }
+  return parts.length > 0 ? `, ${parts.join(', ')}` : '';
+}
+
 function TemplatedCarePlanPercentCircle({
   percent,
   templatedCount,
@@ -271,14 +356,10 @@ function TemplatedCarePlanPercentCircle({
       style={templatedPercentHeatmapStyle(percent, allDayPercents)}
       aria-label={`${templatedCount} of ${patientCount} patients with templated care plan (${percent}%)`}
     >
-      <span className="hc-service-data-calendar-templated-badge-label" aria-hidden>
-        % of Pts with CP Template
-      </span>
-      <span className="hc-service-data-calendar-templated-badge-content">
-        <span className="hc-service-data-calendar-templated-badge-percent">{percent}%</span>
-        <span className="hc-service-data-calendar-templated-badge-fraction">
-          {templatedCount}/{patientCount}
-        </span>
+      <span className="hc-service-data-calendar-templated-badge-text" aria-hidden>
+        % Pts with CPT:{' '}
+        <span className="hc-service-data-calendar-templated-badge-percent">{percent}%</span> (
+        {templatedCount}/{patientCount})
       </span>
     </div>
   );
@@ -533,6 +614,10 @@ interface ServiceDataCalendarProps {
     templatedCarePlanPercentByWeekStart: Map<string, number>;
     templatedCarePlanCountByDate: Map<string, number>;
     templatedCarePlanCountByWeekStart: Map<string, number>;
+    hasChangedServiceByDate: Map<string, boolean>;
+    hasChangedServiceByWeekStart: Map<string, boolean>;
+    cancelledServiceCountByDate: Map<string, number>;
+    cancelledServiceCountByWeekStart: Map<string, number>;
     patientsByDate: Map<string, ServiceDayPatient[]>;
     services: ServiceDayService[];
     error: string | null;
@@ -582,6 +667,18 @@ export function ServiceDataCalendar({
     Map<string, number>
   >(() => new Map());
   const [templatedCarePlanCountByWeekStart, setTemplatedCarePlanCountByWeekStart] = useState<
+    Map<string, number>
+  >(() => new Map());
+  const [hasChangedServiceByDate, setHasChangedServiceByDate] = useState<Map<string, boolean>>(
+    () => new Map()
+  );
+  const [hasChangedServiceByWeekStart, setHasChangedServiceByWeekStart] = useState<
+    Map<string, boolean>
+  >(() => new Map());
+  const [cancelledServiceCountByDate, setCancelledServiceCountByDate] = useState<Map<string, number>>(
+    () => new Map()
+  );
+  const [cancelledServiceCountByWeekStart, setCancelledServiceCountByWeekStart] = useState<
     Map<string, number>
   >(() => new Map());
   const [patientsByDate, setPatientsByDate] = useState<Map<string, ServiceDayPatient[]>>(
@@ -683,6 +780,10 @@ export function ServiceDataCalendar({
         templatedCarePlanPercentByWeekStart: weekTemplatedPercents,
         templatedCarePlanCountByDate: templatedCounts,
         templatedCarePlanCountByWeekStart: weekTemplatedCounts,
+        hasChangedServiceByDate: changedByDate,
+        hasChangedServiceByWeekStart: changedByWeekStart,
+        cancelledServiceCountByDate: cancelledByDate,
+        cancelledServiceCountByWeekStart: cancelledByWeekStart,
         patientsByDate: dayPatients,
         services: dayServices,
         error: fetchError,
@@ -696,6 +797,10 @@ export function ServiceDataCalendar({
         setTemplatedCarePlanPercentByWeekStart(weekTemplatedPercents);
         setTemplatedCarePlanCountByDate(templatedCounts);
         setTemplatedCarePlanCountByWeekStart(weekTemplatedCounts);
+        setHasChangedServiceByDate(changedByDate);
+        setHasChangedServiceByWeekStart(changedByWeekStart);
+        setCancelledServiceCountByDate(cancelledByDate);
+        setCancelledServiceCountByWeekStart(cancelledByWeekStart);
         setPatientsByDate(dayPatients);
         setServices(dayServices);
         setError(fetchError);
@@ -852,6 +957,9 @@ export function ServiceDataCalendar({
             templatedCarePlanPercentByWeekStart.get(weekStartIso);
           const weekTemplatedCarePlanCount =
             templatedCarePlanCountByWeekStart.get(weekStartIso);
+          const weekHasChangeDetected = hasChangedServiceByWeekStart.get(weekStartIso) === true;
+          const weekCancellationCount =
+            cancelledServiceCountByWeekStart.get(weekStartIso) ?? 0;
           return [
           <div
             key={`gutter-${weekIndex}`}
@@ -859,7 +967,11 @@ export function ServiceDataCalendar({
             role="gridcell"
             aria-label={`${weekRangeLabel}, ${weekServiceCount} unique service${
               weekServiceCount === 1 ? '' : 's'
-            }, ${weekPatientCount} unique patient${weekPatientCount === 1 ? '' : 's'}${
+            }, ${weekPatientCount} unique patient${weekPatientCount === 1 ? '' : 's'}${serviceIngestStatusAriaSuffix(
+              weekHasChangeDetected,
+              weekCancellationCount,
+              'week'
+            )}${
               hasCarePlanImports && weekPatientCount > 0 && weekTemplatedCarePlanPercent != null
                 ? `, ${weekTemplatedCarePlanPercent}% with templated care plan`
                 : ''
@@ -880,16 +992,29 @@ export function ServiceDataCalendar({
                 />
               </div>
             </div>
-            {hasWeekData && hasCarePlanImports && weekPatientCount > 0 ? (
+            {(hasWeekData && hasCarePlanImports && weekPatientCount > 0) ||
+            weekHasChangeDetected ||
+            weekCancellationCount > 0 ? (
               <div className="hc-service-data-calendar-day-stats">
                 <div className="hc-service-data-calendar-day-body">
-                  <TemplatedCarePlanPercentCircle
-                    percent={weekTemplatedCarePlanPercent}
-                    templatedCount={weekTemplatedCarePlanCount}
-                    patientCount={weekPatientCount}
-                    loading={loading}
-                    allDayPercents={templatedDayPercents}
-                  />
+                  {hasWeekData && hasCarePlanImports && weekPatientCount > 0 ? (
+                    <TemplatedCarePlanPercentCircle
+                      percent={weekTemplatedCarePlanPercent}
+                      templatedCount={weekTemplatedCarePlanCount}
+                      patientCount={weekPatientCount}
+                      loading={loading}
+                      allDayPercents={templatedDayPercents}
+                    />
+                  ) : null}
+                  {weekHasChangeDetected || weekCancellationCount > 0 ? (
+                    <div className="hc-service-data-calendar-day-body-ingest-flags">
+                      <ServiceIngestStatusFlags
+                        hasChangeDetected={weekHasChangeDetected}
+                        cancellationCount={weekCancellationCount}
+                        scopeLabel="week"
+                      />
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ) : null}
@@ -904,6 +1029,10 @@ export function ServiceDataCalendar({
             const isSelected = selectedDates.has(isoDate);
             const templatedCarePlanPercent = templatedCarePlanPercentByDate.get(isoDate);
             const templatedCarePlanCount = templatedCarePlanCountByDate.get(isoDate);
+            const hasChangeDetected = hasChangedServiceByDate.get(isoDate) === true;
+            const cancellationCount = cancelledServiceCountByDate.get(isoDate) ?? 0;
+            const showTemplatedBadge = hasDayData && hasCarePlanImports && patientCount > 0;
+            const showIngestFlags = hasChangeDetected || cancellationCount > 0;
             const selectionBorderClasses = isSelected
               ? getSelectionBorderClasses(weekIndex, dayIndex, week, weeks, selectedDates)
               : null;
@@ -924,7 +1053,7 @@ export function ServiceDataCalendar({
                   year: 'numeric',
                 })}, ${serviceCount} service row${serviceCount === 1 ? '' : 's'}, ${patientCount} patient${
                   patientCount === 1 ? '' : 's'
-                }${
+                }${serviceIngestStatusAriaSuffix(hasChangeDetected, cancellationCount, 'day')}${
                   hasCarePlanImports && patientCount > 0 && templatedCarePlanPercent != null
                     ? `, ${templatedCarePlanPercent}% with templated care plan`
                     : ''
@@ -943,16 +1072,27 @@ export function ServiceDataCalendar({
                     />
                   </div>
                 </div>
-                {hasDayData && hasCarePlanImports && patientCount > 0 ? (
+                {showTemplatedBadge || showIngestFlags ? (
                   <div className="hc-service-data-calendar-day-stats">
                     <div className="hc-service-data-calendar-day-body">
-                      <TemplatedCarePlanPercentCircle
-                        percent={templatedCarePlanPercent}
-                        templatedCount={templatedCarePlanCount}
-                        patientCount={patientCount}
-                        loading={loading}
-                        allDayPercents={templatedDayPercents}
-                      />
+                      {showTemplatedBadge ? (
+                        <TemplatedCarePlanPercentCircle
+                          percent={templatedCarePlanPercent}
+                          templatedCount={templatedCarePlanCount}
+                          patientCount={patientCount}
+                          loading={loading}
+                          allDayPercents={templatedDayPercents}
+                        />
+                      ) : null}
+                      {showIngestFlags ? (
+                        <div className="hc-service-data-calendar-day-body-ingest-flags">
+                          <ServiceIngestStatusFlags
+                            hasChangeDetected={hasChangeDetected}
+                            cancellationCount={cancellationCount}
+                            scopeLabel="day"
+                          />
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 ) : null}
@@ -1199,11 +1339,13 @@ function ServiceDayServicesTable({
   hasCarePlanImports,
   missingCpTemplateOnly,
   loading,
+  emptyMessage,
 }: {
   services: ServiceDayService[];
   hasCarePlanImports: boolean;
   missingCpTemplateOnly: boolean;
   loading: boolean;
+  emptyMessage?: string;
 }) {
   const [tableSort, setTableSort] = useState<{
     key: ServiceDayServiceSortKey;
@@ -1283,9 +1425,10 @@ function ServiceDayServicesTable({
           ) : sortedServices.length === 0 ? (
             <tr>
               <td colSpan={colSpan} className="hc-service-data-selection-panel-table-empty">
-                {missingCpTemplateOnly && hasCarePlanImports
-                  ? 'No services missing CP template'
-                  : 'No services for selected dates'}
+                {emptyMessage ??
+                  (missingCpTemplateOnly && hasCarePlanImports
+                    ? 'No services missing CP template'
+                    : 'No services for selected dates')}
               </td>
             </tr>
           ) : (
@@ -1334,7 +1477,72 @@ function formatSelectionDateRangeTitle(sortedIsoDates: string[]): string {
   return `${start} - ${end} (${count} ${dayWord})`;
 }
 
-type SelectionPanelTab = 'patients' | 'services';
+type SelectionPanelTab = 'patients' | 'services' | 'updates' | 'cancellations';
+
+function SelectionPanelTabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className={`hc-strategy-tab${active ? ' hc-strategy-tab--active' : ''}`}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SelectionPanelCountsRow({
+  showMissingCpFilter,
+  missingCpTemplateOnly,
+  onMissingCpTemplateOnlyChange,
+  exportDisabled,
+  onExport,
+  children,
+}: {
+  showMissingCpFilter: boolean;
+  missingCpTemplateOnly: boolean;
+  onMissingCpTemplateOnlyChange: (checked: boolean) => void;
+  exportDisabled?: boolean;
+  onExport?: () => void;
+  children: ReactNode;
+}) {
+  const showExport = onExport != null;
+
+  return (
+    <div className="hc-service-data-selection-panel-item-meta">
+      <span className="hc-service-data-selection-panel-item-counts">{children}</span>
+      {showMissingCpFilter || showExport ? (
+        <div className="hc-service-data-selection-panel-item-meta-actions">
+          {showMissingCpFilter ? (
+            <label className="hc-checkbox-label hc-service-data-selection-panel-filter">
+              <input
+                type="checkbox"
+                checked={missingCpTemplateOnly}
+                onChange={(event) => onMissingCpTemplateOnlyChange(event.target.checked)}
+              />
+              Missing CP template only
+            </label>
+          ) : null}
+          {showExport ? (
+            <TableExportButton
+              disabled={exportDisabled}
+              ariaLabel="Export selected service day patients as Excel"
+              onClick={onExport}
+            />
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function ServiceDataSelectionPanel({
   sortedSelectedDates,
@@ -1357,6 +1565,7 @@ function ServiceDataSelectionPanel({
     [sortedSelectedDates]
   );
   const [activeTab, setActiveTab] = useState<SelectionPanelTab>('patients');
+  const [minimized, setMinimized] = useState(false);
   const [missingCpTemplateOnly, setMissingCpTemplateOnly] = useState(false);
   const showMissingCpFilter = hasCarePlanImports;
   const filterActive = showMissingCpFilter && missingCpTemplateOnly;
@@ -1386,6 +1595,16 @@ function ServiceDataSelectionPanel({
   const consolidatedServices = useMemo(() => {
     return services.filter((service) => selectedDateSet.has(service.srvDate));
   }, [services, selectedDateSet]);
+
+  const updatedServices = useMemo(
+    () => consolidatedServices.filter((service) => service.ingestStatus === 'changed'),
+    [consolidatedServices]
+  );
+
+  const cancelledServices = useMemo(
+    () => consolidatedServices.filter((service) => service.ingestStatus === 'vha_cancelled'),
+    [consolidatedServices]
+  );
 
   const exportRows = useMemo((): ServiceDayPatientExportRow[] => {
     const earliestDateByEnrollId = new Map<string, string>();
@@ -1419,57 +1638,71 @@ function ServiceDataSelectionPanel({
   }, [exportRows, sortedSelectedDates, hasCarePlanImports]);
 
   return (
-    <aside className="hc-service-data-selection-panel" aria-label="Selected service dates">
+    <aside
+      className={`hc-service-data-selection-panel${
+        minimized ? ' hc-service-data-selection-panel--minimized' : ''
+      }`}
+      aria-label="Selected service dates"
+    >
       <header className="hc-service-data-selection-panel-header">
-        <h2 className="hc-service-data-selection-panel-title">{selectionTitle}</h2>
-        <div className="hc-service-data-selection-panel-header-actions">
-          {showMissingCpFilter ? (
-            <label className="hc-checkbox-label hc-service-data-selection-panel-filter">
-              <input
-                type="checkbox"
-                checked={missingCpTemplateOnly}
-                onChange={(event) => setMissingCpTemplateOnly(event.target.checked)}
-              />
-              Missing CP template only
-            </label>
-          ) : null}
-          <TableExportButton
-            disabled={loading || exportRows.length === 0}
-            ariaLabel="Export selected service day patients as Excel"
-            onClick={handleExport}
-          />
-        </div>
+        {minimized ? null : (
+          <h2 className="hc-service-data-selection-panel-title">{selectionTitle}</h2>
+        )}
+        <button
+          type="button"
+          className="hc-service-data-calendar-nav-btn hc-service-data-selection-panel-toggle"
+          aria-label={minimized ? 'Expand selection panel' : 'Minimize selection panel'}
+          aria-expanded={!minimized}
+          onClick={() => setMinimized((prev) => !prev)}
+        >
+          {minimized ? <ChevronLeftIcon /> : <ChevronRightIcon />}
+        </button>
       </header>
       <nav
         className="hc-strategy-tabs hc-service-data-selection-panel-tabs"
         aria-label="Selection panel view"
+        hidden={minimized}
       >
         <div className="hc-strategy-tabs-list">
-          <button
-            type="button"
-            className={`hc-strategy-tab${
-              activeTab === 'patients' ? ' hc-strategy-tab--active' : ''
-            }`}
+          <SelectionPanelTabButton
+            active={activeTab === 'patients'}
             onClick={() => setActiveTab('patients')}
           >
             Patients
-          </button>
-          <button
-            type="button"
-            className={`hc-strategy-tab${
-              activeTab === 'services' ? ' hc-strategy-tab--active' : ''
-            }`}
+          </SelectionPanelTabButton>
+          <SelectionPanelTabButton
+            active={activeTab === 'services'}
             onClick={() => setActiveTab('services')}
           >
             Services
-          </button>
+          </SelectionPanelTabButton>
+          <SelectionPanelTabButton
+            active={activeTab === 'updates'}
+            onClick={() => setActiveTab('updates')}
+          >
+            <ServiceIngestStatusFlag variant="changed" title="Service updates" />
+            Updates
+          </SelectionPanelTabButton>
+          <SelectionPanelTabButton
+            active={activeTab === 'cancellations'}
+            onClick={() => setActiveTab('cancellations')}
+          >
+            <ServiceIngestStatusFlag variant="cancelled" title="Service cancellations" />
+            Cancellations
+          </SelectionPanelTabButton>
         </div>
       </nav>
-      <div className="hc-service-data-selection-panel-list">
+      <div className="hc-service-data-selection-panel-list" hidden={minimized}>
         <div className="hc-service-data-selection-panel-item">
           {activeTab === 'patients' ? (
             <>
-              <span className="hc-service-data-selection-panel-item-counts">
+              <SelectionPanelCountsRow
+                showMissingCpFilter={showMissingCpFilter}
+                missingCpTemplateOnly={missingCpTemplateOnly}
+                onMissingCpTemplateOnlyChange={setMissingCpTemplateOnly}
+                exportDisabled={loading || exportRows.length === 0}
+                onExport={handleExport}
+              >
                 {loading
                   ? '…'
                   : filterActive
@@ -1479,7 +1712,7 @@ function ServiceDataSelectionPanel({
                     : `${totalServiceCount} service${totalServiceCount === 1 ? '' : 's'}, ${consolidatedPatients.length} patient${
                         consolidatedPatients.length === 1 ? '' : 's'
                       }`}
-              </span>
+              </SelectionPanelCountsRow>
               {consolidatedPatients.length > 0 || loading ? (
                 <ServiceDayPatientsTable
                   patients={consolidatedPatients}
@@ -1489,9 +1722,13 @@ function ServiceDataSelectionPanel({
                 />
               ) : null}
             </>
-          ) : (
+          ) : activeTab === 'services' ? (
             <>
-              <span className="hc-service-data-selection-panel-item-counts">
+              <SelectionPanelCountsRow
+                showMissingCpFilter={showMissingCpFilter}
+                missingCpTemplateOnly={missingCpTemplateOnly}
+                onMissingCpTemplateOnlyChange={setMissingCpTemplateOnly}
+              >
                 {loading
                   ? '…'
                   : filterActive
@@ -1501,15 +1738,63 @@ function ServiceDataSelectionPanel({
                     : `${consolidatedServices.length} service${
                         consolidatedServices.length === 1 ? '' : 's'
                       }`}
-              </span>
-              {consolidatedServices.length > 0 || loading ? (
-                <ServiceDayServicesTable
-                  services={consolidatedServices}
-                  hasCarePlanImports={hasCarePlanImports}
-                  missingCpTemplateOnly={filterActive}
-                  loading={loading}
-                />
-              ) : null}
+              </SelectionPanelCountsRow>
+              <ServiceDayServicesTable
+                services={consolidatedServices}
+                hasCarePlanImports={hasCarePlanImports}
+                missingCpTemplateOnly={filterActive}
+                loading={loading}
+              />
+            </>
+          ) : activeTab === 'updates' ? (
+            <>
+              <SelectionPanelCountsRow
+                showMissingCpFilter={showMissingCpFilter}
+                missingCpTemplateOnly={missingCpTemplateOnly}
+                onMissingCpTemplateOnlyChange={setMissingCpTemplateOnly}
+              >
+                {loading
+                  ? '…'
+                  : filterActive
+                    ? `${updatedServices.filter((service) => !service.hasTemplatedCarePlan).length} of ${updatedServices.length} service update${
+                        updatedServices.length === 1 ? '' : 's'
+                      } missing CP template`
+                    : `${updatedServices.length} service update${
+                        updatedServices.length === 1 ? '' : 's'
+                      }`}
+              </SelectionPanelCountsRow>
+              <ServiceDayServicesTable
+                services={updatedServices}
+                hasCarePlanImports={hasCarePlanImports}
+                missingCpTemplateOnly={filterActive}
+                loading={loading}
+                emptyMessage="No service updates for selected dates"
+              />
+            </>
+          ) : (
+            <>
+              <SelectionPanelCountsRow
+                showMissingCpFilter={showMissingCpFilter}
+                missingCpTemplateOnly={missingCpTemplateOnly}
+                onMissingCpTemplateOnlyChange={setMissingCpTemplateOnly}
+              >
+                {loading
+                  ? '…'
+                  : filterActive
+                    ? `${cancelledServices.filter((service) => !service.hasTemplatedCarePlan).length} of ${cancelledServices.length} service cancellation${
+                        cancelledServices.length === 1 ? '' : 's'
+                      } missing CP template`
+                    : `${cancelledServices.length} service cancellation${
+                        cancelledServices.length === 1 ? '' : 's'
+                      }`}
+              </SelectionPanelCountsRow>
+              <ServiceDayServicesTable
+                services={cancelledServices}
+                hasCarePlanImports={hasCarePlanImports}
+                missingCpTemplateOnly={filterActive}
+                loading={loading}
+                emptyMessage="No service cancellations for selected dates"
+              />
             </>
           )}
         </div>

@@ -5,6 +5,7 @@ import {
 } from '../progress/recordStrategyTabs';
 import { normalizeMrnForMatch } from '../reconciliation/reconcileReportRows';
 import type { EpicConversionRecord } from '../types';
+import { carePlanRowFingerprint } from './carePlanDedup';
 import { classifyClientNeedsGoals } from './classifyCarePlanContent';
 import type {
   CarePlanEligibilityReason,
@@ -13,6 +14,8 @@ import type {
   EpicCarePlanRow,
   LinkedCarePlanRow,
 } from './types';
+import { buildEmarRowIndex, matchEmarRowsForRecord } from '../emar/linkEmar';
+import type { EpicEmarRow } from '../emar/types';
 
 export function mapCarePlanRowToLinked(
   row: EpicCarePlanRow,
@@ -104,6 +107,39 @@ function indexCarePlanRows(
   return { byBrn, byGcn };
 }
 
+function linkedCarePlanFingerprint(row: LinkedCarePlanRow): string {
+  return carePlanRowFingerprint({
+    brn: row.brn,
+    client_id: row.clientId,
+    offer_id: row.offerId,
+    goldcare_id: row.goldcareId,
+    patient_name: row.patientName,
+    client_needs_goals: row.clientNeedsGoals,
+    service_teaching_plan: row.serviceTeachingPlan,
+    outcomes: row.outcomes,
+    goal_met: row.goalMet,
+    date_saved: row.dateSaved,
+  });
+}
+
+function dedupeLinkedCarePlanRows(rows: LinkedCarePlanRow[]): LinkedCarePlanRow[] {
+  const bestByFingerprint = new Map<string, LinkedCarePlanRow>();
+  for (const row of rows) {
+    const fingerprint = linkedCarePlanFingerprint(row);
+    const existing = bestByFingerprint.get(fingerprint);
+    if (!existing) {
+      bestByFingerprint.set(fingerprint, row);
+      continue;
+    }
+    const rowDate = row.dateSaved ?? '';
+    const existingDate = existing.dateSaved ?? '';
+    if (rowDate > existingDate || (rowDate === existingDate && row.rowIndex >= existing.rowIndex)) {
+      bestByFingerprint.set(fingerprint, row);
+    }
+  }
+  return [...bestByFingerprint.values()];
+}
+
 function matchCarePlanRowsForRecord(
   record: EpicConversionRecord,
   byBrn: Map<string, LinkedCarePlanRow[]>,
@@ -123,7 +159,8 @@ function matchCarePlanRowsForRecord(
     }
   }
 
-  return [...matched.values()].sort((a, b) => {
+  const deduped = dedupeLinkedCarePlanRows([...matched.values()]);
+  return deduped.sort((a, b) => {
     const fileCmp = a.sourceFilename.localeCompare(b.sourceFilename);
     if (fileCmp !== 0) return fileCmp;
     return a.rowIndex - b.rowIndex;
@@ -134,9 +171,12 @@ export function buildCarePlanPatientLinks(
   records: EpicConversionRecord[],
   carePlanRows: EpicCarePlanRow[],
   validatedRecordIds: ReadonlySet<string>,
-  sourceFilenameByImportId: Map<string, string>
+  sourceFilenameByImportId: Map<string, string>,
+  emarRows: EpicEmarRow[] = [],
+  emarSourceFilenameByImportId: Map<string, string> = new Map()
 ): CarePlanPatientLink[] {
   const { byBrn, byGcn } = indexCarePlanRows(carePlanRows, sourceFilenameByImportId);
+  const emarIndex = buildEmarRowIndex(emarRows, emarSourceFilenameByImportId);
   const links: CarePlanPatientLink[] = [];
 
   for (const record of records) {
@@ -146,6 +186,7 @@ export function buildCarePlanPatientLinks(
 
     links.push({
       recordId: record.id,
+      enrollId: record.enroll_id,
       mrn: record.mrn,
       gcn: record.gcn,
       pathway: record.pathway,
@@ -156,7 +197,15 @@ export function buildCarePlanPatientLinks(
       eligibilityReasons,
       carePlanCompletedBy: record.care_plan_completed_by,
       carePlanCompletedAt: record.care_plan_completed_at,
+      emarCompletedBy: record.emar_completed_by,
+      emarCompletedAt: record.emar_completed_at,
       carePlanRows: matchCarePlanRowsForRecord(record, byBrn, byGcn),
+      emarRows: matchEmarRowsForRecord(
+        record,
+        emarIndex.byRecordId,
+        emarIndex.byBrn,
+        emarIndex.byGcn
+      ),
     });
   }
 
@@ -194,22 +243,18 @@ export function getLatestCarePlanRow(link: CarePlanPatientLink): LinkedCarePlanR
 /** 19 May 2026 (calendar). Latest care plan before this date needs an update. */
 export const CARE_PLAN_UPDATE_REQUIRED_BEFORE_MS = Date.parse('2026-05-19T12:00:00');
 
-export interface CarePlanLvdDateRange {
+export interface CarePlanDateRange {
   from: string;
   to: string;
 }
+
+/** @deprecated Use CarePlanDateRange */
+export type CarePlanLvdDateRange = CarePlanDateRange;
 
 export function parseLvdMs(lvd: string | null | undefined): number | null {
   if (!lvd?.trim()) return null;
   const parsed = Date.parse(`${lvd.trim()}T12:00:00`);
   return Number.isNaN(parsed) ? null : parsed;
-}
-
-function formatMsForDateInput(ms: number): string {
-  const d = new Date(ms);
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${month}-${day}`;
 }
 
 /** Display ISO date input value (YYYY-MM-DD) as DD MMM YYYY. */
@@ -222,47 +267,34 @@ export function formatIsoDateInputDisplay(isoDate: string): string {
   return `${day} ${month} ${d.getFullYear()}`;
 }
 
-export function computeDefaultLvdDateRange(
-  links: readonly Pick<CarePlanPatientLink, 'lvd'>[]
-): CarePlanLvdDateRange {
-  let minMs: number | null = null;
-  let maxMs: number | null = null;
-
-  for (const link of links) {
-    const ms = parseLvdMs(link.lvd);
-    if (ms == null) continue;
-    if (minMs == null || ms < minMs) minMs = ms;
-    if (maxMs == null || ms > maxMs) maxMs = ms;
-  }
-
-  if (minMs == null || maxMs == null) return { from: '', to: '' };
-
-  return {
-    from: formatMsForDateInput(minMs),
-    to: formatMsForDateInput(maxMs),
-  };
+export function visitDateRangeIsActive(range: CarePlanDateRange): boolean {
+  return Boolean(range.from || range.to);
 }
 
-export function lvdMatchesToolbarDateRange(
-  lvd: string | null | undefined,
-  range: CarePlanLvdDateRange
+export function carePlanDateRangesEqual(a: CarePlanDateRange, b: CarePlanDateRange): boolean {
+  return a.from === b.from && a.to === b.to;
+}
+
+export function getPatientVisitCountInRange(
+  enrollId: string | null | undefined,
+  visitCountsByEnrollId: ReadonlyMap<string, number> | null
+): number | null {
+  if (visitCountsByEnrollId === null) return null;
+  const key = enrollId?.trim();
+  if (!key) return null;
+  return visitCountsByEnrollId.get(key) ?? 0;
+}
+
+/** True when the patient has at least one SSDB service visit in the toolbar date range. */
+export function patientHasSsdbVisitInToolbarDateRange(
+  enrollId: string | null | undefined,
+  visitCountsByEnrollId: ReadonlyMap<string, number> | null,
+  range: CarePlanDateRange
 ): boolean {
-  if (!range.from && !range.to) return true;
-
-  const lvdMs = parseLvdMs(lvd);
-  if (lvdMs == null) return false;
-
-  if (range.from) {
-    const fromMs = Date.parse(`${range.from}T12:00:00`);
-    if (!Number.isNaN(fromMs) && lvdMs < fromMs) return false;
-  }
-
-  if (range.to) {
-    const toMs = Date.parse(`${range.to}T12:00:00`);
-    if (!Number.isNaN(toMs) && lvdMs > toMs) return false;
-  }
-
-  return true;
+  if (!visitDateRangeIsActive(range)) return true;
+  if (visitCountsByEnrollId === null) return true;
+  const count = getPatientVisitCountInRange(enrollId, visitCountsByEnrollId);
+  return count != null && count > 0;
 }
 
 export function isCarePlanDateStale(dateSaved: string | null | undefined): boolean {
@@ -289,6 +321,21 @@ export function patientHasNoCarePlanData(link: CarePlanPatientLink): boolean {
 /** True when linked care plans exist but none use the conversion template. */
 export function patientHasOnlyUnstructuredCarePlan(link: CarePlanPatientLink): boolean {
   return link.carePlanRows.length > 0 && !recordHasTemplatedCarePlan(link);
+}
+
+/** True when the patient has linked eMAR rows requiring conversion. */
+export function patientHasEmarConversion(link: CarePlanPatientLink): boolean {
+  return link.emarRows.length > 0;
+}
+
+/**
+ * A row moves to the completed table when care plan conversion is marked done.
+ * If the patient also has eMAR conversion, both care plan and eMAR must be marked done.
+ */
+export function isCarePlanConversionRowComplete(link: CarePlanPatientLink): boolean {
+  if (!link.carePlanCompletedAt) return false;
+  if (!patientHasEmarConversion(link)) return true;
+  return !!link.emarCompletedAt;
 }
 
 /**
@@ -327,8 +374,8 @@ export function computeCarePlanProgressMetrics(
   let conversionComplete = 0;
 
   for (const link of links) {
-    if (link.carePlanRows.length > 0) linkedComplete += 1;
-    if (link.carePlanCompletedAt) conversionComplete += 1;
+    if (recordHasTemplatedCarePlan(link)) linkedComplete += 1;
+    if (isCarePlanConversionRowComplete(link)) conversionComplete += 1;
   }
 
   return {

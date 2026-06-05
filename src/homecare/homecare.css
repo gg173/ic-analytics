@@ -348,9 +348,11 @@
 }
 
 .hc-care-plan-conversion-stack {
-  gap: 1rem;
+  gap: 0.75rem;
   grid-template-rows: auto;
   overflow: auto;
+  padding-left: 0;
+  padding-right: 0;
 }
 
 .hc-service-data-conversion {
@@ -406,6 +408,30 @@
   background: #fff;
   border: 1px solid #cbd5e1;
   border-radius: 0.75rem;
+  transition:
+    width 0.2s ease,
+    max-width 0.2s ease,
+    flex-basis 0.2s ease;
+}
+
+.hc-service-data-selection-panel--minimized {
+  flex: 0 0 2.25rem;
+  width: 2.25rem;
+  max-width: 2.25rem;
+}
+
+.hc-service-data-selection-panel--minimized .hc-service-data-selection-panel-header {
+  justify-content: center;
+  border-bottom: none;
+}
+
+.hc-service-data-selection-panel--minimized .hc-service-data-selection-panel-tabs,
+.hc-service-data-selection-panel--minimized .hc-service-data-selection-panel-list {
+  display: none;
+}
+
+.hc-service-data-selection-panel-toggle {
+  flex: 0 0 auto;
 }
 
 .hc-service-data-selection-panel-header {
@@ -434,18 +460,31 @@
   text-overflow: ellipsis;
 }
 
-.hc-service-data-selection-panel-header-actions {
+.hc-service-data-selection-panel-item-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  min-height: 1.25rem;
+}
+
+.hc-service-data-selection-panel-item-meta .hc-service-data-selection-panel-item-counts {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.hc-service-data-selection-panel-item-meta-actions {
   display: flex;
   align-items: center;
   gap: 0.35rem;
   flex: 0 0 auto;
 }
 
-.hc-service-data-selection-panel-header .hc-service-data-selection-panel-filter.hc-checkbox-label {
-  flex: 0 1 5.25rem;
-  max-width: 5.25rem;
-  min-height: 2rem;
-  padding: 0.2rem 0;
+.hc-service-data-selection-panel-item-meta .hc-service-data-selection-panel-filter.hc-checkbox-label {
+  flex: 0 1 auto;
+  max-width: 5.5rem;
+  min-height: 0;
+  padding: 0;
   box-sizing: border-box;
   font-size: 0.5rem;
   line-height: 1.25;
@@ -455,7 +494,7 @@
   align-items: center;
 }
 
-.hc-service-data-selection-panel-header .hc-service-data-selection-panel-filter input[type='checkbox'] {
+.hc-service-data-selection-panel-item-meta .hc-service-data-selection-panel-filter input[type='checkbox'] {
   width: 0.875rem;
   height: 0.875rem;
   margin: 0;
@@ -479,6 +518,10 @@
   padding: 0.3rem 0.55rem;
   border-radius: 6px 6px 0 0;
   gap: 0.25rem;
+}
+
+.hc-service-data-selection-panel-tabs .hc-strategy-tab .hc-service-data-calendar-ingest-flag {
+  margin-top: 0;
 }
 
 .hc-service-data-selection-panel-list {
@@ -904,99 +947,71 @@
   flex-direction: column;
   align-self: stretch;
   width: 100%;
-  flex: 0 0 2.25rem;
+  flex: 0 0 auto;
   min-height: 2.25rem;
-  max-height: 2.25rem;
   gap: 0;
 }
 
 .hc-service-data-calendar-day-body {
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   align-items: stretch;
-  justify-content: center;
-  gap: 0.35rem;
+  justify-content: flex-start;
+  gap: 0.1rem;
   align-self: stretch;
   width: 100%;
-  height: 100%;
   min-height: 2.25rem;
   z-index: 1;
   padding: 0.05rem 0.15rem;
   box-sizing: border-box;
 }
 
+.hc-service-data-calendar-day-body-ingest-flags {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.15rem;
+  flex-shrink: 0;
+  width: 100%;
+}
+
+.hc-service-data-calendar-ingest-flag-label {
+  font-size: 0.5rem;
+  font-weight: 600;
+  line-height: 1.1;
+  color: #dc2626;
+  white-space: nowrap;
+}
+
 .hc-service-data-calendar-templated-badge {
   flex: 0 0 auto;
   align-self: stretch;
   display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  justify-content: center;
-  gap: 0.2rem;
+  align-items: center;
+  justify-content: flex-start;
   width: 100%;
   max-width: 100%;
-  height: 2.25rem;
-  min-height: 2.25rem;
-  max-height: 2.25rem;
   min-width: 3.5rem;
-  padding: 0.15rem 0.2rem;
+  padding: 2px;
   border-radius: 0.25rem;
   border: 1px solid transparent;
-  font-size: 0.5625rem;
-  font-weight: 700;
-  line-height: 1.2;
   box-sizing: border-box;
   overflow: hidden;
 }
 
-.hc-service-data-calendar-templated-badge-label {
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  align-self: stretch;
-  margin-right: 0.25rem;
-  padding-right: 0.25rem;
-  border-right: 1px solid currentColor;
+.hc-service-data-calendar-templated-badge-text {
   font-size: 0.5625rem;
-  font-weight: 500;
-  line-height: 1.1;
-  text-align: right;
-  opacity: 0.85;
-  overflow: hidden;
-}
-
-.hc-service-data-calendar-templated-badge-content {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  align-self: stretch;
-  gap: 0;
-  height: 100%;
+  font-weight: 400;
   line-height: 1.2;
-  text-align: center;
+  text-align: left;
   white-space: nowrap;
-}
-
-.hc-service-data-calendar-templated-badge-percent,
-.hc-service-data-calendar-templated-badge-fraction {
-  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hc-service-data-calendar-templated-badge-percent {
-  font-size: 0.6875rem;
   font-weight: 700;
-  line-height: 1.15;
-}
-
-.hc-service-data-calendar-templated-badge-fraction {
-  font-size: 0.5rem;
-  font-weight: 600;
-  line-height: 1.1;
-  opacity: 0.9;
 }
 
 .hc-service-data-calendar-templated-badge--loading {
@@ -1038,12 +1053,38 @@
   flex-shrink: 0;
   display: inline-flex;
   flex-direction: column;
+  align-items: flex-start;
   justify-content: center;
   gap: 0;
   font-size: 0.625rem;
   font-weight: 600;
   line-height: 1;
   color: inherit;
+}
+
+.hc-service-data-calendar-ingest-flag {
+  display: inline-flex;
+  flex-shrink: 0;
+  line-height: 0;
+  margin-top: 0.05rem;
+}
+
+.hc-service-data-calendar-ingest-flag--changed {
+  color: #ca8a04;
+}
+
+.hc-service-data-calendar-ingest-flag--cancelled {
+  color: #dc2626;
+}
+
+.hc-service-data-calendar-ingest-flag-icon {
+  display: block;
+}
+
+.hc-service-data-calendar-cell--gutter .hc-service-data-calendar-day-header-top > .hc-service-data-calendar-week-summary-badge {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
 }
 
 .hc-service-data-calendar-day-num-day,
@@ -1158,7 +1199,7 @@
 }
 
 .hc-care-plan-split-tables {
-  margin-top: 0.75rem;
+  margin-top: 0.5rem;
 }
 
 .hc-care-plan-conversion .hc-progress-reconcile-summary--care-plan {
@@ -1177,12 +1218,14 @@
 }
 
 .hc-care-plan-conversion .hc-progress-reconcile-summary {
-  padding: 1rem;
+  padding: 0.5rem 0.5rem 0.25rem;
+  margin-bottom: 0.25rem;
 }
 
 .hc-care-plan-conversion .hc-toolbar {
-  padding-inline: 1rem;
-  margin-bottom: 0.75rem;
+  padding-inline: 0.5rem;
+  margin-top: 0;
+  margin-bottom: 0.5rem;
 }
 
 .hc-care-plan-conversion .hc-toolbar .hc-toolbar-clear {
@@ -1316,8 +1359,32 @@
 }
 
 .hc-care-plan-conversion .hc-progress-reconcile-summary .hc-reconcile-stat {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
   padding: 0.5rem 0.625rem;
   min-width: 0;
+}
+
+.hc-care-plan-conversion .hc-care-plan-stat-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 0;
+}
+
+.hc-care-plan-conversion .hc-care-plan-stat-label-line {
+  display: block;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.hc-care-plan-conversion .hc-progress-reconcile-summary .hc-reconcile-stat strong {
+  flex: 0 0 auto;
+  text-align: right;
 }
 
 .hc-care-plan-conversion .hc-progress-reconcile-summary .hc-reconcile-stat strong,
@@ -1325,15 +1392,13 @@
   font-size: 1.25rem;
 }
 
-.hc-care-plan-conversion .hc-progress-reconcile-summary .hc-reconcile-stat span,
-.hc-care-plan-conversion .hc-reconcile-stat.hc-care-plan-with-stat .hc-care-plan-stat-main span {
+.hc-care-plan-conversion .hc-progress-reconcile-summary .hc-reconcile-stat .hc-care-plan-stat-label,
+.hc-care-plan-conversion .hc-reconcile-stat.hc-care-plan-with-stat .hc-care-plan-stat-main .hc-care-plan-stat-label {
   font-size: 0.6875rem;
-  line-height: 1.25;
 }
 
-.hc-care-plan-conversion .hc-reconcile-stat.hc-care-plan-with-stat .hc-care-plan-stat-sub span {
+.hc-care-plan-conversion .hc-reconcile-stat.hc-care-plan-with-stat .hc-care-plan-stat-sub .hc-care-plan-stat-label {
   font-size: 0.5625rem;
-  line-height: 1.25;
 }
 
 .hc-care-plan-conversion .hc-reconcile-stat.hc-care-plan-with-stat .hc-care-plan-stat-sub strong {
@@ -1347,6 +1412,55 @@
 .hc-care-plan-conversion .hc-table-wrap--wide {
   overflow-x: hidden;
   min-width: 0;
+}
+
+.hc-care-plan-conversion .hc-table-wrap--resizable-columns {
+  overflow-x: hidden;
+}
+
+.hc-care-plan-conversion .hc-table--care-plan-patients-resizable thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f8fafc;
+  box-shadow: 0 1px 0 #e2e8f0;
+}
+
+.hc-table-col-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  z-index: 2;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.hc-table-col-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 1px;
+  background: transparent;
+  transition: background-color 0.15s ease;
+}
+
+.hc-table-col-resize-handle:hover::after,
+body.hc-table-col-resizing .hc-table-col-resize-handle::after {
+  background: #94a3b8;
+}
+
+body.hc-table-col-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.hc-care-plan-conversion .hc-table--care-plan-patients-resizable col,
+.hc-care-plan-conversion .hc-table--care-plan-patients-resizable .hc-care-plan-col-eligibility {
+  max-width: none;
 }
 
 .hc-care-plan-conversion .hc-table--care-plan-patients {
@@ -1373,12 +1487,11 @@
 }
 
 .hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-mrn,
-.hc-care-plan-conversion .hc-table--care-plan-patients col.hc-care-plan-col-mrn {
-  width: 5.25rem;
-}
-
+.hc-care-plan-conversion .hc-table--care-plan-patients col.hc-care-plan-col-mrn,
 .hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-gcn,
-.hc-care-plan-conversion .hc-table--care-plan-patients col.hc-care-plan-col-gcn {
+.hc-care-plan-conversion .hc-table--care-plan-patients col.hc-care-plan-col-gcn,
+.hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-lvd,
+.hc-care-plan-conversion .hc-table--care-plan-patients col.hc-care-plan-col-lvd {
   width: 4.25rem;
 }
 
@@ -1397,19 +1510,9 @@
   width: 6.75rem;
 }
 
-.hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-plan,
-.hc-care-plan-conversion .hc-table--care-plan-patients col.hc-care-plan-col-plan {
-  width: 7rem;
-}
-
 .hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-latest,
 .hc-care-plan-conversion .hc-table--care-plan-patients col.hc-care-plan-col-latest {
   width: 8.25rem;
-}
-
-.hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-lvd,
-.hc-care-plan-conversion .hc-table--care-plan-patients col.hc-care-plan-col-lvd {
-  width: 6.75rem;
 }
 
 .hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-eligibility,
@@ -1469,21 +1572,23 @@
 }
 
 .hc-care-plan-conversion .hc-table--care-plan-patients thead th.hc-care-plan-col-eligibility,
-.hc-care-plan-conversion .hc-table--care-plan-patients thead th.hc-care-plan-col-care-plan-status {
+.hc-care-plan-conversion .hc-table--care-plan-patients thead th.hc-care-plan-col-conversion,
+.hc-care-plan-conversion .hc-table--care-plan-patients thead th.hc-care-plan-col-emar-conversion {
   white-space: normal;
   line-height: 1.15;
   vertical-align: bottom;
 }
 
-.hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-care-plan-status,
-.hc-care-plan-conversion .hc-table--care-plan-patients col.hc-care-plan-col-care-plan-status {
-  width: 11.75rem;
-  min-width: 11.75rem;
+.hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-conversion,
+.hc-care-plan-conversion .hc-table--care-plan-patients col.hc-care-plan-col-conversion {
+  width: 14rem;
+  min-width: 14rem;
 }
 
-.hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-care-plan-status .hc-status-radios {
-  flex-wrap: wrap;
-  row-gap: 0.2rem;
+.hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-emar-conversion,
+.hc-care-plan-conversion .hc-table--care-plan-patients col.hc-care-plan-col-emar-conversion {
+  width: 14rem;
+  min-width: 14rem;
 }
 
 .hc-care-plan-conversion .hc-table--care-plan-patients-completed col.hc-care-plan-col-ic-lead,
@@ -1491,18 +1596,26 @@
   width: 7rem;
 }
 
-.hc-care-plan-conversion .hc-table--care-plan-patients-completed col.hc-care-plan-col-care-plan-status,
-.hc-care-plan-conversion .hc-table--care-plan-patients-completed .hc-care-plan-col-care-plan-status {
+.hc-care-plan-conversion .hc-table--care-plan-patients-completed col.hc-care-plan-col-conversion,
+.hc-care-plan-conversion .hc-table--care-plan-patients-completed .hc-care-plan-col-conversion {
   width: 24rem;
 }
 
-.hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-care-plan-status {
+.hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-conversion {
   vertical-align: middle;
 }
 
-.hc-care-plan-conversion .hc-table--care-plan-patients-completed td.hc-care-plan-col-care-plan-status {
+.hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-col-emar-conversion {
+  vertical-align: middle;
+}
+
+.hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-no-emar {
+  color: #94a3b8;
+}
+
+.hc-care-plan-conversion .hc-table--care-plan-patients-completed td.hc-care-plan-col-conversion {
   height: 1px;
-  padding: 0;
+  padding: 0.25rem 0.4rem;
   vertical-align: middle;
 }
 
@@ -1545,42 +1658,83 @@
 
 .hc-care-plan-conversion .hc-table--care-plan-patients .hc-care-plan-kind {
   font-size: 0.65rem;
-  padding: 0.1rem 0.35rem;
+  font-weight: 400;
+  padding: 0.15rem 0.35rem;
 }
 
-.hc-care-plan-cell {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.hc-care-plan-conversion-cell {
+  display: flex;
+  flex-direction: row;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  min-width: 0;
 }
 
-.hc-care-plan-attach-btn {
+.hc-care-plan-conversion-badge {
   display: inline-flex;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: center;
-  padding: 0.15rem;
+  gap: 0.25rem;
   border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: #475569;
   cursor: pointer;
-  line-height: 0;
+  line-height: 1;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: filter 0.15s ease, box-shadow 0.15s ease;
 }
 
-.hc-care-plan-attach-btn:hover {
-  color: #1d4ed8;
-  background: #eff6ff;
+.hc-care-plan-conversion-badge.hc-care-plan-kind {
+  display: inline-flex;
+  font-weight: 400;
+  border-radius: 4px;
 }
 
-.hc-care-plan-attach-btn:focus-visible {
+.hc-care-plan-conversion-badge:hover {
+  filter: brightness(0.97);
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.hc-care-plan-conversion-badge:focus-visible {
   outline: 2px solid #2563eb;
   outline-offset: 1px;
 }
 
-.hc-care-plan-attach-icon {
+.hc-care-plan-conversion-badge-label {
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.hc-care-plan-doc-icon {
   display: block;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+.hc-care-plan-conversion-checkbox {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 0.65rem;
+  font-weight: 400;
+  line-height: 1.2;
+  color: #334155;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.hc-care-plan-conversion-checkbox .hc-status-checkbox {
+  flex-shrink: 0;
+}
+
+.hc-care-plan-conversion-cell .hc-care-plan-completed-status {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .hc-care-plan-stat-fraction {
@@ -1591,13 +1745,21 @@
 }
 
 .hc-care-plan-conversion .hc-care-plan-stat-label--linked {
-  font-weight: 700;
+  font-weight: 400;
   color: var(--hc-success-fg, #0d5c2e);
 }
 
 .hc-care-plan-conversion .hc-care-plan-stat-label--no-data {
-  font-weight: 700;
+  font-weight: 400;
   color: #991b1b;
+}
+
+.hc-care-plan-conversion .hc-reconcile-stat.hc-care-plan-with-stat .hc-care-plan-stat-main .hc-care-plan-stat-numerator,
+.hc-care-plan-conversion
+  .hc-progress-reconcile-summary--care-plan
+  > .hc-reconcile-stat--unmatched
+  .hc-care-plan-stat-numerator {
+  font-size: 1.5rem;
 }
 
 .hc-reconcile-stat.hc-care-plan-with-stat {
@@ -1611,11 +1773,13 @@
 
 .hc-reconcile-stat.hc-care-plan-with-stat .hc-care-plan-stat-main {
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
   flex: 0 0 auto;
   width: max-content;
-  max-width: 10.5rem;
+  max-width: 14rem;
   min-width: 0;
   padding: 0.25rem 0.5rem;
   border: none;
@@ -1650,16 +1814,19 @@
 }
 
 .hc-reconcile-stat.hc-care-plan-with-stat .hc-care-plan-stat-sub {
-  flex: 0 0 7.75rem;
-  width: 7.75rem;
+  flex: 1 1 0;
+  min-width: 9.5rem;
+  max-width: 13rem;
 }
 
 .hc-care-plan-stat-sub {
   display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
   min-width: 0;
-  padding: 0.625rem 0.75rem;
+  padding: 0.5rem 0.625rem;
   border: 1px solid rgba(15, 23, 42, 0.1);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.55);
@@ -1684,17 +1851,31 @@
 }
 
 .hc-care-plan-stat-sub strong {
+  flex: 0 0 auto;
   font-size: 1.125rem;
   color: #0f172a;
+  text-align: right;
 }
 
-.hc-care-plan-stat-sub span {
-  line-height: 1.25;
+.hc-reconcile-stat.hc-care-plan-with-stat .hc-care-plan-stat-main .hc-care-plan-stat-label,
+.hc-care-plan-stat-sub .hc-care-plan-stat-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.hc-reconcile-stat.hc-care-plan-with-stat .hc-care-plan-stat-main strong {
+  flex: 0 0 auto;
+  text-align: right;
 }
 
 .hc-reconcile-stat.hc-care-plan-kind--templated strong,
 .hc-reconcile-stat.hc-care-plan-kind--unstructured strong {
   display: block;
+}
+
+.hc-care-plan-conversion .hc-care-plan-stat-sub.hc-care-plan-kind--templated strong,
+.hc-care-plan-conversion .hc-care-plan-stat-sub.hc-care-plan-kind--unstructured strong {
+  display: inline;
 }
 
 .hc-table--care-plan-rows:not(.hc-table--care-plan-rows-list) td:nth-child(n + 4),
@@ -2840,6 +3021,15 @@ button.hc-epic-split-panel-count--active {
 
 .hc-table--import th {
   font-size: 0.625rem;
+}
+
+.hc-table--import thead .hc-table-sort {
+  width: 100%;
+  justify-content: center;
+}
+
+.hc-table--import thead .hc-col-import-type .hc-table-sort {
+  justify-content: flex-start;
 }
 
 .hc-table--import .hc-col-import-date,
@@ -6269,6 +6459,517 @@ select.hc-cell-input {
   width: auto;
 }
 
+.hc-modal--patient-care-overview {
+  width: 95vw;
+  max-width: 95vw;
+  min-height: 70vh;
+  max-height: 92vh;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.hc-modal--patient-care-overview .hc-modal-header--patient-care-overview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid #cbd5e1;
+  background-color: #f8fafc;
+  flex-shrink: 0;
+}
+
+.hc-modal--patient-care-overview .hc-modal-header--patient-care-overview h2 {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  text-align: left;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.hc-modal--patient-care-overview .hc-modal-close {
+  display: inline-flex;
+  align-items: stretch;
+  justify-content: stretch;
+  width: 2.5rem;
+  height: 2.5rem;
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+  padding: 0.125rem;
+  box-sizing: border-box;
+  line-height: 0;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.hc-modal--patient-care-overview .hc-modal-close .hc-modal-close-glyph {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.hc-modal--patient-care-overview .hc-modal-close .hc-modal-close-glyph svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.hc-patient-care-overview-summary {
+  --hc-patient-care-overview-summary-pad-y: 0.75rem;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  gap: 0;
+  padding-top: var(--hc-patient-care-overview-summary-pad-y);
+  padding-bottom: var(--hc-patient-care-overview-summary-pad-y);
+  border-bottom: 1px solid #e2e8f0;
+  background-color: #f8fafc;
+}
+
+.hc-patient-care-overview-summary .hc-care-plan-detail-field {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.hc-patient-care-overview-summary .hc-care-plan-detail-field:not(:last-child) {
+  position: relative;
+  padding-right: 0.75rem;
+  margin-right: 0.75rem;
+}
+
+.hc-patient-care-overview-summary .hc-care-plan-detail-field:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: calc(-1 * var(--hc-patient-care-overview-summary-pad-y));
+  bottom: calc(-1 * var(--hc-patient-care-overview-summary-pad-y));
+  right: 0;
+  width: 1px;
+  background-color: #e2e8f0;
+  pointer-events: none;
+}
+
+.hc-patient-care-overview-summary .hc-care-plan-detail-field dt {
+  margin: 0;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.hc-patient-care-overview-summary .hc-care-plan-detail-field dd {
+  margin: 0;
+  min-width: 0;
+  color: #1d4ed8;
+}
+
+.hc-patient-care-overview-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  gap: 10px;
+  padding: 10px;
+  background-color: #fff;
+}
+
+.hc-patient-care-overview-left {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.hc-patient-care-overview-right {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background-color: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+}
+
+.hc-patient-care-overview-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.hc-patient-care-overview-left .hc-patient-care-overview-section {
+  background-color: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+}
+
+.hc-patient-care-overview-left .hc-patient-care-overview-section .hc-patient-care-overview-table-wrap {
+  border: none;
+  border-radius: 0;
+}
+
+.hc-patient-care-overview-section--header-only {
+  flex: 0 0 auto;
+}
+
+.hc-patient-care-overview-section--header-only .hc-patient-care-overview-section-title {
+  border-bottom: none;
+}
+
+.hc-patient-care-overview-section-title {
+  margin: 0;
+  padding: 0.5rem 1rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #475569;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.hc-patient-care-overview-left .hc-patient-care-overview-section .hc-patient-care-overview-section-title {
+  background-color: #f8fafc;
+}
+
+.hc-patient-care-overview-table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.hc-modal--patient-care-overview .hc-table--care-plan-rows-list {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.hc-modal--patient-care-overview
+  .hc-patient-care-overview-left
+  .hc-patient-care-overview-section
+  .hc-table--care-plan-rows-list
+  thead
+  th,
+.hc-modal--patient-care-overview
+  .hc-patient-care-overview-left
+  .hc-patient-care-overview-section
+  .hc-table--care-plan-rows-list
+  tbody
+  td {
+  font-size: 0.6875rem;
+}
+
+.hc-modal--patient-care-overview
+  .hc-patient-care-overview-left
+  .hc-patient-care-overview-section
+  .hc-table--care-plan-rows-list
+  thead
+  th {
+  font-weight: 400;
+  padding: 0.3rem 0.45rem;
+  text-transform: none;
+}
+
+.hc-modal--patient-care-overview .hc-care-plan-rows-list-col-date {
+  width: 6.25rem;
+}
+
+.hc-modal--patient-care-overview .hc-care-plan-rows-list-col-needs {
+  width: 52%;
+}
+
+.hc-modal--patient-care-overview .hc-care-plan-rows-list-col-service {
+  width: 22%;
+}
+
+.hc-modal--patient-care-overview .hc-care-plan-rows-list-col-outcomes {
+  width: 15%;
+}
+
+.hc-modal--patient-care-overview .hc-care-plan-rows-list-col-goal-met {
+  width: 4rem;
+}
+
+.hc-modal--patient-care-overview .hc-table--care-plan-rows-list th,
+.hc-modal--patient-care-overview .hc-table--care-plan-rows-list td {
+  max-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+  vertical-align: top;
+}
+
+.hc-modal--patient-care-overview .hc-table--care-plan-rows-list td.hc-care-plan-rows-list-needs,
+.hc-modal--patient-care-overview .hc-table--care-plan-rows-list td.hc-care-plan-rows-list-text {
+  text-align: left;
+  white-space: pre-line;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: #64748b;
+}
+
+.hc-modal--patient-care-overview .hc-table--care-plan-rows-list td.hc-care-plan-rows-list-needs {
+  white-space: normal;
+}
+
+.hc-modal--patient-care-overview .hc-care-plan-rows-list-date-inner {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.hc-modal--patient-care-overview .hc-care-plan-rows-list-date-inner > * {
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.hc-modal--patient-care-overview .hc-care-plan-formatted-needs,
+.hc-modal--patient-care-overview .hc-care-plan-rows-list-needs-text {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.hc-modal--patient-care-overview .hc-care-plan-templated-fields {
+  font-size: 0.6875rem;
+}
+
+.hc-modal--patient-care-overview .hc-care-plan-templated-fields th[scope='row'] {
+  font-size: 0.5625rem;
+}
+
+.hc-patient-care-overview-empty {
+  margin: 0;
+  padding: 1rem 1.5rem;
+}
+
+.hc-patient-service-schedule-calendar {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.hc-patient-service-schedule-calendar--empty {
+  align-items: center;
+  justify-content: center;
+}
+
+.hc-patient-service-schedule-calendar-header {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0;
+  background-color: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.hc-patient-service-schedule-calendar-header .hc-patient-care-overview-section-title {
+  grid-column: 1;
+  justify-self: start;
+  border-bottom: none;
+  background-color: transparent;
+}
+
+.hc-patient-service-schedule-calendar-nav {
+  grid-column: 2;
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0;
+}
+
+.hc-patient-service-schedule-calendar-header .hc-service-data-calendar-month {
+  min-width: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.hc-patient-service-schedule-calendar-header .hc-service-data-calendar-nav-btn {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.hc-patient-service-schedule-calendar-header .hc-service-data-calendar-nav-btn svg {
+  width: 0.625rem;
+  height: 0.625rem;
+}
+
+.hc-patient-service-schedule-calendar-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.hc-patient-service-schedule-calendar-grid.hc-service-data-calendar-grid {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+/* 7-column grid: undo 8-column border rules from hc-service-data-calendar-grid */
+.hc-patient-service-schedule-calendar-grid.hc-service-data-calendar-grid > :nth-child(8n) {
+  border-right: 1px solid #e2e8f0;
+}
+
+.hc-patient-service-schedule-calendar-grid.hc-service-data-calendar-grid > :nth-child(7n) {
+  border-right: none;
+}
+
+.hc-patient-service-schedule-calendar-grid.hc-service-data-calendar-grid > :nth-last-child(-n + 8) {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.hc-patient-service-schedule-calendar-grid.hc-service-data-calendar-grid > :nth-last-child(-n + 7) {
+  border-bottom: none;
+}
+
+.hc-patient-service-schedule-calendar-cell {
+  align-items: flex-start;
+  padding: 0.25rem;
+  min-height: 4.5rem;
+}
+
+.hc-patient-service-schedule-calendar-day-num {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #334155;
+  line-height: 1.2;
+}
+
+.hc-patient-service-schedule-calendar-loading {
+  font-size: 0.6875rem;
+  color: #94a3b8;
+}
+
+.hc-patient-service-schedule-calendar-services {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0.15rem 0 0;
+  padding: 0;
+  width: 100%;
+  min-width: 0;
+}
+
+.hc-patient-service-schedule-calendar-service {
+  display: inline-block;
+  max-width: 100%;
+  width: fit-content;
+  font-size: 0.5625rem;
+  font-weight: 500;
+  line-height: 1.25;
+  padding: 0.125rem 0.375rem;
+  border-radius: 999px;
+  border: none;
+  background: #dcfce7;
+  color: #166534;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+.hc-patient-service-schedule-calendar-service:hover {
+  filter: brightness(0.96);
+}
+
+.hc-patient-service-schedule-calendar-service:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+
+.hc-patient-service-schedule-calendar-service--cancelled {
+  background: #fee2e2;
+  color: #b91c1c;
+  text-decoration: line-through;
+}
+
+.hc-patient-service-schedule-calendar-service--changed {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.hc-patient-service-schedule-calendar-flags {
+  display: flex;
+  gap: 0.15rem;
+  margin-top: auto;
+}
+
+.hc-patient-service-schedule-calendar-flag {
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 50%;
+}
+
+.hc-patient-service-schedule-calendar-flag--changed {
+  background: #f59e0b;
+}
+
+.hc-patient-service-schedule-calendar-flag--cancelled {
+  background: #ef4444;
+}
+
+.hc-patient-service-schedule-calendar-error {
+  margin: 0.35rem 0 0;
+  flex-shrink: 0;
+}
+
+.hc-modal--service-day-detail {
+  width: min(720px, 85vw);
+  max-width: 85vw;
+  max-height: 90vh;
+  overflow: auto;
+}
+
+.hc-service-day-detail-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.hc-service-day-detail-status--active {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.hc-service-day-detail-status--changed {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.hc-service-day-detail-status--vha_cancelled {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
 .hc-care-plan-detail-meta {
   display: flex;
   flex-wrap: wrap;
@@ -6688,4 +7389,1025 @@ select.hc-cell-input {
 .hc-user-mgmt-table .hc-user-mgmt-actions .hc-btn {
   font-size: 0.75rem;
   padding: 0.25rem 0.5rem;
+}
+
+/* ============================================================
+   Billing Workspace v2
+   ============================================================ */
+
+.hc-billing-page-content {
+  padding: 1.25rem 1.5rem;
+  gap: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* ── Dashboard ─────────────────────────────────────────────── */
+
+.hc-billing-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.hc-billing-dashboard-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.hc-billing-section-title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.hc-billing-current-week {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.hc-billing-current-week-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.hc-billing-week-label {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.hc-billing-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.75rem;
+}
+
+.hc-billing-summary-grid--compact {
+  grid-template-columns: repeat(3, minmax(100px, 1fr));
+}
+
+.hc-billing-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.hc-billing-stat-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #0f172a;
+}
+
+.hc-billing-stat-label {
+  font-size: 0.75rem;
+  color: #64748b;
+  text-align: center;
+}
+
+.hc-billing-stat--clean   .hc-billing-stat-value { color: #065f46; }
+.hc-billing-stat--warning .hc-billing-stat-value { color: #92400e; }
+.hc-billing-stat--alert   .hc-billing-stat-value { color: #b91c1c; }
+.hc-billing-stat--muted   .hc-billing-stat-value { color: #64748b; }
+
+.hc-billing-cycles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 1rem;
+}
+
+.hc-billing-cycle-card {
+  padding: 1rem 1.25rem;
+}
+
+.hc-billing-cycle-row--active {
+  background: #f0fdf4;
+  font-weight: 500;
+}
+
+.hc-billing-active-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+/* ── Upload panel ──────────────────────────────────────────── */
+
+.hc-billing-upload-panel {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 1rem 1.25rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.hc-billing-upload-panel-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.hc-billing-upload-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.hc-billing-upload-slot {
+  display: flex;
+  flex-direction: column;
+  padding: 0.875rem 1rem;
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.hc-billing-upload-slot--optional {
+  border-style: dashed;
+}
+
+.hc-billing-upload-slot-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin-bottom: 0.1rem;
+}
+
+.hc-billing-upload-slot-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 50%;
+  background: #1d4ed8;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.hc-billing-upload-slot-number--optional {
+  background: #94a3b8;
+}
+
+.hc-billing-upload-slot-required {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #1d4ed8;
+  margin-top: 0.1rem;
+}
+
+.hc-billing-upload-slot-optional {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #64748b;
+  margin-top: 0.1rem;
+}
+
+.hc-billing-upload-result {
+  margin-bottom: 0.5rem;
+  font-size: 0.82rem;
+}
+
+/* ── Pay Cycles tab ────────────────────────────────────────── */
+
+.hc-billing-pay-cycles-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Reuse hc-service-data-calendar layout but make it fill available space */
+.hc-billing-pay-cycles-layout .hc-service-data-calendar {
+  flex: 0 0 auto;
+}
+
+/* Gutter cell states for billing pay periods */
+/* ── Week drill-in breadcrumb ──────────────────────────────── */
+
+.hc-billing-week-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: 0.25rem;
+  flex-shrink: 0;
+}
+
+.hc-billing-week-breadcrumb-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.6rem 0.3rem 0.4rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.hc-billing-week-breadcrumb-back:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.hc-billing-week-breadcrumb-sep {
+  color: #cbd5e1;
+  font-size: 0.875rem;
+  user-select: none;
+}
+
+.hc-billing-week-breadcrumb-current {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.hc-billing-calendar-gutter {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.hc-billing-calendar-gutter:hover {
+  background: #eff6ff;
+}
+
+.hc-billing-calendar-gutter--in_progress {
+  background: #fffbeb;
+}
+
+.hc-billing-calendar-gutter--in_progress:hover {
+  background: #fef3c7;
+}
+
+.hc-billing-calendar-gutter--finalized {
+  background: #f0fdf4;
+}
+
+.hc-billing-calendar-gutter--finalized:hover {
+  background: #dcfce7;
+}
+
+.hc-billing-calendar-gutter--selected,
+.hc-billing-calendar-gutter--selected:hover {
+  background: #eff6ff;
+  box-shadow: inset 3px 0 0 #1d4ed8;
+}
+
+/* Day cells that belong to the selected week */
+.hc-billing-calendar-day--selected-week {
+  background: #f0f5ff !important;
+}
+
+/* Status + deadline inside gutter */
+.hc-billing-gutter-status {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
+}
+
+.hc-billing-gutter-flags {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  margin-top: 0.2rem;
+}
+
+.hc-billing-calendar-day-flags {
+  display: flex;
+  gap: 0.2rem;
+  flex-wrap: wrap;
+}
+
+.hc-billing-calendar-day-counts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  padding: 0.1rem 0.25rem 0.25rem;
+}
+
+.hc-billing-day-count {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.hc-billing-day-count--clean {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.hc-billing-day-count--dq {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.hc-billing-day-count--inv {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* ── Week tile ─────────────────────────────────────────────── */
+
+.hc-billing-week-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.875rem 1rem;
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.hc-billing-week-tile:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.hc-billing-week-tile--selected {
+  border-color: #1d4ed8;
+  background: #eff6ff;
+  box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.12);
+}
+
+.hc-billing-week-tile--current {
+  border-color: #3b82f6;
+}
+
+.hc-billing-week-tile--in_progress {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.hc-billing-week-tile--in_progress:hover,
+.hc-billing-week-tile--in_progress.hc-billing-week-tile--selected {
+  border-color: #d97706;
+  background: #fef3c7;
+}
+
+.hc-billing-week-tile--finalized {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.hc-billing-week-tile--finalized:hover,
+.hc-billing-week-tile--finalized.hc-billing-week-tile--selected {
+  border-color: #22c55e;
+}
+
+.hc-billing-week-tile--past {
+  opacity: 0.55;
+}
+
+.hc-billing-week-tile-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+
+.hc-billing-week-tile-dates {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #0f172a;
+  line-height: 1.25;
+}
+
+.hc-billing-week-tile-now {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #1d4ed8;
+  background: #dbeafe;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.hc-billing-week-tile-status {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.hc-billing-week-tile-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.hc-billing-tile-count {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+}
+
+.hc-billing-tile-count--dq  { background: #fef3c7; color: #92400e; }
+.hc-billing-tile-count--inv { background: #fee2e2; color: #b91c1c; }
+.hc-billing-tile-count--ok  { background: #dcfce7; color: #166534; }
+
+.hc-billing-week-tile-deadline {
+  margin-top: 0.1rem;
+}
+
+.hc-billing-deadline-chip {
+  font-size: 0.7rem;
+  color: #64748b;
+}
+
+.hc-billing-deadline-chip--urgent {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+/* ── Week workspace ────────────────────────────────────────── */
+
+.hc-billing-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.hc-billing-workspace--finalized {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+/* Split layout: table + review panel side by side */
+.hc-billing-workspace-split {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.hc-billing-workspace-inner {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  overflow-y: auto;
+}
+
+/* When no panel, still pad */
+.hc-billing-workspace > .hc-billing-workspace-inner {
+  padding: 1rem 1.25rem;
+}
+
+/* ── Review modal ──────────────────────────────────────────── */
+
+.hc-billing-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.hc-billing-modal {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.22);
+  width: 100%;
+  max-width: 540px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.hc-billing-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1.1rem 1.25rem 0.9rem;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.hc-billing-modal-title {
+  margin: 0 0 0.15rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.hc-billing-modal-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.hc-billing-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.hc-billing-review-dl--two-col {
+  grid-template-columns: 120px 1fr;
+}
+
+/* ── Investigation cards ───────────────────────────────────── */
+
+.hc-billing-investigation-card {
+  border-radius: 7px;
+  padding: 0.7rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.hc-billing-investigation-card--dq  { background: #fffbeb; border: 1px solid #fde68a; }
+.hc-billing-investigation-card--inv { background: #fef2f2; border: 1px solid #fca5a5; }
+
+.hc-billing-investigation-headline {
+  margin: 0;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #0f172a;
+  line-height: 1.35;
+}
+
+.hc-billing-investigation-detail {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.hc-billing-investigation-action-box {
+  background: rgba(255,255,255,0.7);
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  padding: 0.45rem 0.6rem;
+  margin-top: 0.25rem;
+}
+
+.hc-billing-investigation-action-label {
+  display: block;
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  margin-bottom: 0.2rem;
+}
+
+.hc-billing-investigation-action-text {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #1e293b;
+}
+
+/* ── Determination form ────────────────────────────────────── */
+
+.hc-billing-determination {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.hc-billing-determination--closed {
+  background: #f0fdf4;
+  border-color: #86efac;
+}
+
+.hc-billing-determination-outcome {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.hc-badge--lg {
+  font-size: 0.875rem;
+  padding: 0.3rem 0.75rem;
+  font-weight: 700;
+}
+
+.hc-billing-determination-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.hc-billing-determination-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.6rem 0.75rem;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+  color: #475569;
+}
+
+.hc-billing-determination-option--billable:hover,
+.hc-billing-determination-option--billable.hc-billing-determination-option--selected {
+  border-color: #16a34a;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.hc-billing-determination-option--not-billable:hover,
+.hc-billing-determination-option--not-billable.hc-billing-determination-option--selected {
+  border-color: #dc2626;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.hc-billing-determination-option-icon {
+  font-size: 1rem;
+}
+
+.hc-billing-determination-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 0.3rem;
+}
+
+.hc-billing-determination-textarea {
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-family: inherit;
+  line-height: 1.5;
+  color: #1e293b;
+  background: #fff;
+  resize: vertical;
+  box-sizing: border-box;
+  transition: border-color 0.12s;
+}
+
+.hc-billing-determination-textarea:focus {
+  outline: none;
+  border-color: #1d4ed8;
+  box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.1);
+}
+
+.hc-billing-determination-rationale {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.hc-billing-determination-rationale-text {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #1e293b;
+  line-height: 1.5;
+  font-style: italic;
+}
+
+/* ── Visit table: extra compact ────────────────────────────── */
+
+.hc-billing-visit-table th,
+.hc-billing-visit-table td {
+  padding: 0.25rem 0.45rem;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.hc-billing-visit-table thead th {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #64748b;
+}
+
+.hc-billing-row--clickable {
+  cursor: pointer;
+}
+
+/* Status cell: badge + reason pills stacked */
+.hc-billing-status-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  align-items: flex-start;
+}
+
+.hc-billing-status-badge {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.35rem;
+  line-height: 1.4;
+}
+
+.hc-billing-status-reason {
+  font-size: 0.63rem;
+  font-weight: 600;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 3px;
+  padding: 0.05rem 0.3rem;
+  white-space: nowrap;
+}
+
+.hc-billing-row--inv .hc-billing-status-reason {
+  color: #991b1b;
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+.hc-billing-workspace-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+/* Review panel reuses hc-service-data-selection-panel styles */
+.hc-billing-workspace .hc-service-data-selection-panel {
+  flex: 0 0 320px;
+  width: 320px;
+  max-width: 320px;
+  border-left: 1px solid #e2e8f0;
+  border-radius: 0;
+  border-top: none;
+  border-bottom: none;
+  border-right: none;
+}
+
+/* ── Review panel content ───────────────────────────────────── */
+
+.hc-billing-review-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.hc-billing-review-section:last-child {
+  border-bottom: none;
+}
+
+.hc-billing-review-section-title {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+}
+
+.hc-billing-review-section-title--dq  { color: #92400e; }
+.hc-billing-review-section-title--inv { color: #b91c1c; }
+
+.hc-billing-review-dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.65rem;
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.hc-billing-review-dl dt {
+  color: #64748b;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.hc-billing-review-dl dd {
+  margin: 0;
+  color: #1e293b;
+  word-break: break-word;
+}
+
+.hc-billing-review-issue {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+}
+
+.hc-billing-review-issue--dq  { background: #fffbeb; border: 1px solid #fde68a; }
+.hc-billing-review-issue--inv { background: #fef2f2; border: 1px solid #fca5a5; }
+
+.hc-billing-review-issue-type {
+  margin: 0;
+  font-weight: 600;
+  color: #0f172a;
+  font-size: 0.8rem;
+}
+
+.hc-billing-review-issue-message {
+  margin: 0;
+  color: #1e293b;
+  line-height: 1.4;
+}
+
+.hc-billing-review-issue-action {
+  margin: 0;
+  color: #64748b;
+  font-style: italic;
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
+.hc-billing-review-issue-meta {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.hc-billing-upload-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  background: #f8fafc;
+  border: 1.5px dashed #cbd5e1;
+  border-radius: 8px;
+  align-items: flex-start;
+}
+
+/* ── Visit filter chips ─────────────────────────────────────── */
+
+.hc-billing-visit-table-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.hc-billing-visit-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.hc-billing-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #f8fafc;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+}
+
+.hc-billing-filter-chip:hover {
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.hc-billing-filter-chip--active {
+  border-color: #1d4ed8;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.hc-billing-count--alert {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+/* Row colouring for flagged visits */
+.hc-billing-row--dq  { background: #fffbeb; }
+.hc-billing-row--inv { background: #fef2f2; }
+
+/* ── Rules tab ──────────────────────────────────────────────── */
+
+.hc-billing-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.hc-billing-rules-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.hc-billing-rules-content {
+  padding-top: 1rem;
+}
+
+.hc-billing-rules-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.hc-billing-rules-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.hc-billing-rule-group {
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.hc-billing-rule-group-title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+/* ── Success button variant ─────────────────────────────────── */
+
+.hc-btn-success {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #ffffff;
+}
+
+.hc-btn-success:hover:not(:disabled) {
+  background: #15803d;
+  border-color: #15803d;
 }

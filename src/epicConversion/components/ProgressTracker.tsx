@@ -67,7 +67,7 @@ function ProgressBar({
   const isDischargeSubmitted = statUnit === 'discharge-submitted';
   const carePlanConversionLabel =
     validatedComplete != null && complete > 0
-      ? `, ${validatedComplete} of ${complete} linked episodes with care plan conversion completed (${validatedPercentOfComplete}% of linked)`
+      ? `, ${validatedComplete} of ${complete} episodes with completed CP conversion (${validatedPercentOfComplete}% of templated)`
       : '';
 
   return (
@@ -82,7 +82,7 @@ function ProgressBar({
           isEpisodeConversion
             ? `${complete} of ${total} VHA enrolments converted to Epic episodes, ${percent}%${validatedLabel}`
             : isCarePlanConversion
-              ? `${complete} of ${total} episodes with care plan data linked, ${percent}%${carePlanConversionLabel}`
+              ? `${complete} of ${total} episodes with templated CP, ${percent}%${carePlanConversionLabel}`
               : isIclReassessment && iclStats
               ? `${complete} of ${total} reassessments completed, ${percent}%. ${iclStats.decidedConvert} of ${complete} decisions to convert (${convertDecisionPercent}%), ${iclStats.decidedDischarge} of ${complete} decisions to discharge (${dischargeDecisionPercent}%)`
               : isDischargeSubmitted
@@ -104,7 +104,7 @@ function ProgressBar({
               style={{ width: `${validatedPercentOfComplete}%` }}
               title={
                 isCarePlanConversion
-                  ? `${validatedComplete} of ${complete} linked episodes with care plan conversion completed`
+                  ? `${validatedComplete} of ${complete} episodes with completed CP conversion`
                   : `${validatedComplete} of ${complete} converted Epic episodes validated`
               }
             />
@@ -127,11 +127,11 @@ function ProgressBar({
         ) : isCarePlanConversion ? (
           <>
             <p className="hc-progress-bar-stat hc-progress-bar-stat--converted">
-              {complete} / {total} episodes with care plan data linked ({percent}%)
+              {complete} / {total} episodes with templated CP ({percent}%)
             </p>
             {validatedComplete != null ? (
               <p className="hc-progress-bar-stat hc-progress-bar-stat--validated">
-                {validatedComplete} / {complete} linked episodes with care plan conversion completed (
+                {validatedComplete} / {complete} episodes with completed CP conversion (
                 {validatedPercentOfComplete}%)
               </p>
             ) : null}

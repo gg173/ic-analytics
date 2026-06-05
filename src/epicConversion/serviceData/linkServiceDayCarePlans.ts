@@ -3,7 +3,7 @@ import { normalizeGcnForMatch } from '../carePlan/linkCarePlans';
 import type { EpicCarePlanRow } from '../carePlan/types';
 import { normalizeMrnForMatch } from '../reconciliation/reconcileReportRows';
 import type { EpicConversionRecord } from '../types';
-import type { EpicSsdbService } from './types';
+import type { EpicSsdbService, SsdbServiceIngestStatus } from './types';
 
 function enrollIdHasTemplatedCarePlan(
   record: EpicConversionRecord,
@@ -145,6 +145,7 @@ export interface ServiceDayService {
   srvDate: string;
   srvDiscipline: string | null;
   srvDeliveryMode: string | null;
+  ingestStatus: SsdbServiceIngestStatus;
   hasTemplatedCarePlan: boolean;
 }
 
@@ -157,7 +158,103 @@ export type SsdbServiceDayRow = Pick<
   | 'pathway'
   | 'srv_discipline'
   | 'srv_delivery_mode'
+  | 'ingest_status'
 >;
+
+export type PatientSsdbServiceFetchRow = SsdbServiceDayRow &
+  Pick<
+    EpicSsdbService,
+    | 'srv_date_pdd'
+    | 'carepath'
+    | 'program'
+    | 'srv_code'
+    | 'srv_code_description'
+    | 'srv_status'
+    | 'srv_tx_codes'
+    | 'srv_provider_id'
+    | 'srv_provider_designation'
+    | 'start_time'
+    | 'end_time'
+    | 'worked_duration'
+  >;
+
+export interface PatientSsdbServiceDetail {
+  calendarKey: string;
+  srvDate: string;
+  srvDatePdd: string | null;
+  srvDiscipline: string | null;
+  srvDeliveryMode: string | null;
+  pathway: string | null;
+  carepath: string | null;
+  program: string | null;
+  srvCode: string | null;
+  srvCodeDescription: string | null;
+  srvStatus: string | null;
+  srvTxCodes: string | null;
+  srvProviderId: string | null;
+  srvProviderDesignation: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  workedDuration: string | null;
+  ingestStatus: SsdbServiceIngestStatus;
+}
+
+export function mapPatientSsdbServiceDetail(row: PatientSsdbServiceFetchRow): PatientSsdbServiceDetail {
+  return {
+    calendarKey: row.calendar_key,
+    srvDate: row.srv_date ?? '',
+    srvDatePdd: row.srv_date_pdd?.trim() || null,
+    srvDiscipline: row.srv_discipline?.trim() || null,
+    srvDeliveryMode: row.srv_delivery_mode?.trim() || null,
+    pathway: row.pathway?.trim() || null,
+    carepath: row.carepath?.trim() || null,
+    program: row.program?.trim() || null,
+    srvCode: row.srv_code?.trim() || null,
+    srvCodeDescription: row.srv_code_description?.trim() || null,
+    srvStatus: row.srv_status?.trim() || null,
+    srvTxCodes: row.srv_tx_codes?.trim() || null,
+    srvProviderId: row.srv_provider_id?.trim() || null,
+    srvProviderDesignation: row.srv_provider_designation?.trim() || null,
+    startTime: row.start_time?.trim() || null,
+    endTime: row.end_time?.trim() || null,
+    workedDuration: row.worked_duration?.trim() || null,
+    ingestStatus: row.ingest_status,
+  };
+}
+
+export function indexPatientSsdbServiceDetails(
+  rows: PatientSsdbServiceFetchRow[]
+): Map<string, PatientSsdbServiceDetail> {
+  const byCalendarKey = new Map<string, PatientSsdbServiceDetail>();
+  for (const row of rows) {
+    if (!row.calendar_key) continue;
+    byCalendarKey.set(row.calendar_key, mapPatientSsdbServiceDetail(row));
+  }
+  return byCalendarKey;
+}
+
+export function formatSsdbServiceIngestStatusLabel(status: SsdbServiceIngestStatus): string {
+  switch (status) {
+    case 'changed':
+      return 'Changed on re-import';
+    case 'vha_cancelled':
+      return 'Cancelled in VHA data';
+    default:
+      return 'Active';
+  }
+}
+
+export function ssdbServiceRowHasChangeDetected(
+  row: Pick<SsdbServiceDayRow, 'ingest_status'>
+): boolean {
+  return row.ingest_status === 'changed';
+}
+
+export function ssdbServiceRowHasCancellation(
+  row: Pick<SsdbServiceDayRow, 'ingest_status'>
+): boolean {
+  return row.ingest_status === 'vha_cancelled';
+}
 
 const GENERAL_NURSING_CALL_LABEL = 'General Nursing Call';
 const VHA_NURSING_CALL_LABEL = 'VHA Nursing Call';
@@ -267,6 +364,7 @@ export function computeServiceDayServices(
       srvDate: row.srv_date,
       srvDiscipline: row.srv_discipline?.trim() || null,
       srvDeliveryMode: row.srv_delivery_mode?.trim() || null,
+      ingestStatus: row.ingest_status,
       hasTemplatedCarePlan:
         linkCarePlans && record != null
           ? enrollIdHasTemplatedCarePlan(record, byBrn, byGcn)

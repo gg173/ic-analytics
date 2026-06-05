@@ -54,6 +54,7 @@ export type CarePlanPatientFilter =
 
 export interface CarePlanPatientLink {
   recordId: string;
+  enrollId: string | null;
   mrn: string;
   gcn: string | null;
   pathway: string | null;
@@ -65,7 +66,29 @@ export interface CarePlanPatientLink {
   eligibilityReasons: CarePlanEligibilityReason[];
   carePlanCompletedBy: string | null;
   carePlanCompletedAt: string | null;
+  emarCompletedBy: string | null;
+  emarCompletedAt: string | null;
   carePlanRows: LinkedCarePlanRow[];
+  emarRows: LinkedEmarRow[];
+}
+
+export interface LinkedEmarRow {
+  id: string;
+  importId: string;
+  sourceFilename: string;
+  brn: string;
+  clientId: string | null;
+  offerId: string | null;
+  goldcareId: string | null;
+  medicationName: string | null;
+  lastAdminAt: string | null;
+  dose: string | null;
+  route: string | null;
+  frequency: string | null;
+  totalNumberOfDoses: string | null;
+  orderOrDispensedDate: string | null;
+  endDate: string | null;
+  rowIndex: number;
 }
 
 export interface LinkedCarePlanRow {

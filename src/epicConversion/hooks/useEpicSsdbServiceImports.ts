@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { fetchAllSupabaseRows } from './fetchAllSupabaseRows';
 import { parseVhaSsdbServiceXlsxBuffer } from '../ingest/parseVhaSsdbServiceXlsx';
 import { applySsdbServiceIngest } from '../serviceData/applySsdbServiceIngest';
+import {
+  ssdbServiceRowHasCancellation,
+  ssdbServiceRowHasChangeDetected,
+  type PatientSsdbServiceFetchRow,
+} from '../serviceData/linkServiceDayCarePlans';
 import type { EpicSsdbService, EpicSsdbServiceImport } from '../serviceData/types';
 import type { EpicConversionRecord } from '../types';
 
@@ -248,7 +254,7 @@ export function useEpicSsdbServiceImports() {
     const { data, error: fetchError } = await supabase
       .from('epic_conversion_ssdb_services')
       .select(
-        'calendar_key, srv_date, enroll_id, mrn, pathway, srv_discipline, srv_delivery_mode'
+        'calendar_key, srv_date, enroll_id, mrn, pathway, srv_discipline, srv_delivery_mode, ingest_status'
       )
       .gte('srv_date', startDate)
       .lte('srv_date', endDate)
@@ -260,6 +266,10 @@ export function useEpicSsdbServiceImports() {
         patientCountsByDate: new Map<string, number>(),
         weekServiceCountsByWeekStart: new Map<string, number>(),
         weekPatientCountsByWeekStart: new Map<string, number>(),
+        hasChangedServiceByDate: new Map<string, boolean>(),
+        hasChangedServiceByWeekStart: new Map<string, boolean>(),
+        cancelledServiceCountByDate: new Map<string, number>(),
+        cancelledServiceCountByWeekStart: new Map<string, number>(),
         enrollIdsByDate: new Map<string, Set<string>>(),
         enrollIdsByWeekStart: new Map<string, Set<string>>(),
         ssdbPatientByDate: new Map(),
@@ -269,6 +279,10 @@ export function useEpicSsdbServiceImports() {
     }
 
     const serviceCountsByDate = new Map<string, number>();
+    const hasChangedServiceByDate = new Map<string, boolean>();
+    const hasChangedServiceByWeekStart = new Map<string, boolean>();
+    const cancelledServiceCountByDate = new Map<string, number>();
+    const cancelledServiceCountByWeekStart = new Map<string, number>();
     const ssdbServiceRows: Pick<
       EpicSsdbService,
       | 'calendar_key'
@@ -278,6 +292,7 @@ export function useEpicSsdbServiceImports() {
       | 'pathway'
       | 'srv_discipline'
       | 'srv_delivery_mode'
+      | 'ingest_status'
     >[] = [];
     const enrollIdsByDate = new Map<string, Set<string>>();
     const ssdbPatientByDate = new Map<
@@ -297,11 +312,21 @@ export function useEpicSsdbServiceImports() {
         | 'pathway'
         | 'srv_discipline'
         | 'srv_delivery_mode'
+        | 'ingest_status'
       >[]
     ) ?? []) {
       if (!row.srv_date) continue;
       ssdbServiceRows.push(row);
       serviceCountsByDate.set(row.srv_date, (serviceCountsByDate.get(row.srv_date) ?? 0) + 1);
+      if (ssdbServiceRowHasChangeDetected(row)) {
+        hasChangedServiceByDate.set(row.srv_date, true);
+      }
+      if (ssdbServiceRowHasCancellation(row)) {
+        cancelledServiceCountByDate.set(
+          row.srv_date,
+          (cancelledServiceCountByDate.get(row.srv_date) ?? 0) + 1
+        );
+      }
       if (row.enroll_id) {
         const enrollIds = enrollIdsByDate.get(row.srv_date) ?? new Set<string>();
         enrollIds.add(row.enroll_id);
@@ -318,6 +343,15 @@ export function useEpicSsdbServiceImports() {
       }
 
       const weekStart = getWeekStartIso(row.srv_date);
+      if (ssdbServiceRowHasChangeDetected(row)) {
+        hasChangedServiceByWeekStart.set(weekStart, true);
+      }
+      if (ssdbServiceRowHasCancellation(row)) {
+        cancelledServiceCountByWeekStart.set(
+          weekStart,
+          (cancelledServiceCountByWeekStart.get(weekStart) ?? 0) + 1
+        );
+      }
       if (row.calendar_key) {
         const calendarKeys = calendarKeysByWeekStart.get(weekStart) ?? new Set<string>();
         calendarKeys.add(row.calendar_key);
@@ -350,6 +384,10 @@ export function useEpicSsdbServiceImports() {
       patientCountsByDate,
       weekServiceCountsByWeekStart,
       weekPatientCountsByWeekStart,
+      hasChangedServiceByDate,
+      hasChangedServiceByWeekStart,
+      cancelledServiceCountByDate,
+      cancelledServiceCountByWeekStart,
       enrollIdsByDate,
       enrollIdsByWeekStart,
       ssdbPatientByDate,
@@ -357,6 +395,101 @@ export function useEpicSsdbServiceImports() {
       error: null,
     };
   }, []);
+
+  const fetchSsdbServiceDateBounds = useCallback(async () => {
+    const [minResult, maxResult] = await Promise.all([
+      supabase
+        .from('epic_conversion_ssdb_services')
+        .select('srv_date')
+        .not('srv_date', 'is', null)
+        .order('srv_date', { ascending: true })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from('epic_conversion_ssdb_services')
+        .select('srv_date')
+        .not('srv_date', 'is', null)
+        .order('srv_date', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+    const error = minResult.error?.message ?? maxResult.error?.message ?? null;
+    return {
+      from: minResult.data?.srv_date ?? '',
+      to: maxResult.data?.srv_date ?? '',
+      error,
+    };
+  }, []);
+
+  const fetchVisitCountsByEnrollIdInDateRange = useCallback(
+    async (startDate: string, endDate: string) => {
+      if (!startDate && !endDate) {
+        return { visitCountsByEnrollId: new Map<string, number>(), error: null as string | null };
+      }
+
+      const { data, error } = await fetchAllSupabaseRows<Pick<EpicSsdbService, 'enroll_id'>>(
+        (client, from, to) => {
+          let query = client
+            .from('epic_conversion_ssdb_services')
+            .select('enroll_id')
+            .not('srv_date', 'is', null)
+            .not('enroll_id', 'is', null);
+          if (startDate) {
+            query = query.gte('srv_date', startDate);
+          }
+          if (endDate) {
+            query = query.lte('srv_date', endDate);
+          }
+          return query.range(from, to);
+        },
+        supabase
+      );
+
+      if (error) {
+        return { visitCountsByEnrollId: new Map<string, number>(), error: error.message };
+      }
+
+      const visitCountsByEnrollId = new Map<string, number>();
+      for (const row of data) {
+        if (!row.enroll_id) continue;
+        visitCountsByEnrollId.set(
+          row.enroll_id,
+          (visitCountsByEnrollId.get(row.enroll_id) ?? 0) + 1
+        );
+      }
+
+      return { visitCountsByEnrollId, error: null };
+    },
+    []
+  );
+
+  const fetchPatientSsdbServicesInDateRange = useCallback(
+    async (enrollId: string, startDate: string, endDate: string) => {
+      const trimmedEnrollId = enrollId.trim();
+      if (!trimmedEnrollId) {
+        return { rows: [] as PatientSsdbServiceFetchRow[], error: null as string | null };
+      }
+
+      const { data, error: fetchError } = await supabase
+        .from('epic_conversion_ssdb_services')
+        .select(
+          'calendar_key, srv_date, srv_date_pdd, enroll_id, mrn, pathway, carepath, srv_discipline, srv_delivery_mode, program, srv_code, srv_code_description, srv_status, srv_tx_codes, srv_provider_id, srv_provider_designation, start_time, end_time, worked_duration, ingest_status'
+        )
+        .eq('enroll_id', trimmedEnrollId)
+        .gte('srv_date', startDate)
+        .lte('srv_date', endDate)
+        .not('srv_date', 'is', null)
+        .order('srv_date', { ascending: true });
+
+      if (fetchError) {
+        return { rows: [] as PatientSsdbServiceFetchRow[], error: fetchError.message };
+      }
+
+      return { rows: (data as PatientSsdbServiceFetchRow[]) ?? [], error: null };
+    },
+    []
+  );
 
   const fetchMonthHasServices = useCallback(async (year: number, month: number) => {
     const monthStart = `${year}-${String(month + 1).padStart(2, '0')}-01`;
@@ -386,6 +519,9 @@ export function useEpicSsdbServiceImports() {
     deleteServiceImport,
     fetchRowsForImport,
     fetchDailyCountsForDateRange,
+    fetchSsdbServiceDateBounds,
+    fetchVisitCountsByEnrollIdInDateRange,
+    fetchPatientSsdbServicesInDateRange,
     fetchMonthHasServices,
   };
 }

@@ -5,6 +5,7 @@ export const IMPORT_DOCUMENT_TYPE_LABELS = {
   enrolment: 'VHA SSDB Enrolment Data',
   serviceData: 'VHA SSDB Service Data',
   carePlan: 'VHA EMRI Care Plan Templates',
+  emar: 'VHA EMRI eMAR',
   epicReport: 'Epic Conversion Report',
 } as const;
 
@@ -16,6 +17,7 @@ const IMPORT_KINDS: ConsolidatedImportKind[] = [
   'enrolment',
   'serviceData',
   'carePlan',
+  'emar',
   'epicReport',
 ];
 
@@ -133,11 +135,13 @@ export function ConsolidatedImportUploadDialog({
   const enrolmentInputId = useId();
   const serviceDataInputId = useId();
   const carePlanInputId = useId();
+  const emarInputId = useId();
   const epicReportInputId = useId();
   const inputIds: Record<ConsolidatedImportKind, string> = {
     enrolment: enrolmentInputId,
     serviceData: serviceDataInputId,
     carePlan: carePlanInputId,
+    emar: emarInputId,
     epicReport: epicReportInputId,
   };
 

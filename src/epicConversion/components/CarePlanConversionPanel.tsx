@@ -1,29 +1,27 @@
-import { useEffect, useMemo, useState, type MouseEvent } from 'react';
-import { carePlanContentKindLabel } from '../carePlan/classifyCarePlanContent';
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { useResizableTableColumns } from './useResizableTableColumns';
 import {
   buildCarePlanPatientLinks,
+  carePlanDateRangesEqual,
   eligibilityReasonLabel,
   getLatestCarePlanRow,
+  getPatientVisitCountInRange,
+  isCarePlanConversionRowComplete,
   isCarePlanDateStale,
-  computeDefaultLvdDateRange,
   formatIsoDateInputDisplay,
-  lvdMatchesToolbarDateRange,
+  patientHasSsdbVisitInToolbarDateRange,
   patientNeedsCarePlanUpdate,
   recordHasTemplatedCarePlan,
   summarizeCarePlanLinks,
-  type CarePlanLvdDateRange,
+  visitDateRangeIsActive,
+  type CarePlanDateRange,
 } from '../carePlan/linkCarePlans';
-import type { CarePlanContentKind } from '../carePlan/types';
 import type {
   CarePlanEligibilityReason,
   CarePlanLinkSummary,
   CarePlanPatientFilter,
   CarePlanPatientLink,
 } from '../carePlan/types';
-
-function lvdDateRangesEqual(a: CarePlanLvdDateRange, b: CarePlanLvdDateRange): boolean {
-  return a.from === b.from && a.to === b.to;
-}
 
 function openToolbarDatePicker(e: MouseEvent<HTMLInputElement>) {
   const input = e.currentTarget;
@@ -74,7 +72,7 @@ function ToolbarLvdDateInput({
     </span>
   );
 }
-type CarePlanTableSortKey = 'hosp_dc' | 'latest_care_plan' | 'lvd';
+type CarePlanTableSortKey = 'hosp_dc' | 'latest_care_plan' | 'visit_count';
 type SortDirection = 'asc' | 'desc';
 
 const EPISODE_CONVERSION_STATUS_FILTER_OPTIONS: readonly CarePlanEligibilityReason[] = [
@@ -82,9 +80,10 @@ const EPISODE_CONVERSION_STATUS_FILTER_OPTIONS: readonly CarePlanEligibilityReas
   'validated',
   'icl_pending',
 ];
+import type { PatientSsdbServiceDetail, ServiceDayService } from '../serviceData/linkServiceDayCarePlans';
 import type { EpicConversionRecord } from '../types';
-import { AttachmentIcon } from './CarePlanRowDetailModal';
-import { CarePlanRowsListModal } from './CarePlanRowsListModal';
+import { DocumentIcon } from './CarePlanRowDetailModal';
+import { PatientCareOverviewModal } from './PatientCareOverviewModal';
 import {
   buildPathwayCarePathFilterGroups,
   isPathwayCarePathFilterActive,
@@ -157,27 +156,54 @@ function compareLatestCarePlanDates(
   return direction === 'asc' ? cmp : -cmp;
 }
 
+function compareVisitCounts(
+  a: CarePlanPatientLink,
+  b: CarePlanPatientLink,
+  visitCountsByEnrollId: ReadonlyMap<string, number> | null,
+  direction: SortDirection
+): number {
+  const aCount = getPatientVisitCountInRange(a.enrollId, visitCountsByEnrollId) ?? -1;
+  const bCount = getPatientVisitCountInRange(b.enrollId, visitCountsByEnrollId) ?? -1;
+  const cmp = aCount - bCount;
+  return direction === 'asc' ? cmp : -cmp;
+}
+
 function compareCarePlanLinks(
   a: CarePlanPatientLink,
   b: CarePlanPatientLink,
   key: CarePlanTableSortKey,
-  direction: SortDirection
+  direction: SortDirection,
+  visitCountsByEnrollId: ReadonlyMap<string, number> | null
 ): number {
   switch (key) {
     case 'hosp_dc':
       return compareSortDates(a.hospDcDate, b.hospDcDate, direction);
     case 'latest_care_plan':
       return compareLatestCarePlanDates(a, b, direction);
-    case 'lvd':
-      return compareSortDates(a.lvd, b.lvd, direction);
+    case 'visit_count':
+      return compareVisitCounts(a, b, visitCountsByEnrollId, direction);
   }
 }
 
 function sortCarePlanPatientLinks(
   links: CarePlanPatientLink[],
-  sort: { key: CarePlanTableSortKey; direction: SortDirection }
+  sort: { key: CarePlanTableSortKey; direction: SortDirection },
+  visitCountsByEnrollId: ReadonlyMap<string, number> | null
 ): CarePlanPatientLink[] {
-  return [...links].sort((a, b) => compareCarePlanLinks(a, b, sort.key, sort.direction));
+  return [...links].sort((a, b) =>
+    compareCarePlanLinks(a, b, sort.key, sort.direction, visitCountsByEnrollId)
+  );
+}
+
+function formatPatientVisitCount(
+  enrollId: string | null | undefined,
+  visitCountsByEnrollId: ReadonlyMap<string, number> | null,
+  hasServiceDataImports: boolean
+): string {
+  if (!hasServiceDataImports) return '—';
+  const count = getPatientVisitCountInRange(enrollId, visitCountsByEnrollId);
+  if (count == null) return '—';
+  return String(count);
 }
 
 function matchesEligibilityReasonFilter(
@@ -199,7 +225,8 @@ function matchesCarePlanToolbarFilters(
   pathwayCarePathGroups: ReturnType<typeof buildPathwayCarePathFilterGroups>,
   icLeadFilter: string[] | null,
   episodeConversionStatusFilter: string[] | null,
-  lvdDateRange: CarePlanLvdDateRange,
+  visitDateRange: CarePlanDateRange,
+  visitCountsByEnrollId: ReadonlyMap<string, number> | null,
   icLeadOptions: readonly string[]
 ): boolean {
   if (!matchesPathwayCarePathFilter(link, pathwayCarePathFilter, pathwayCarePathGroups)) {
@@ -215,7 +242,15 @@ function matchesCarePlanToolbarFilters(
   ) {
     return false;
   }
-  if (!lvdMatchesToolbarDateRange(link.lvd, lvdDateRange)) return false;
+  if (
+    !patientHasSsdbVisitInToolbarDateRange(
+      link.enrollId,
+      visitCountsByEnrollId,
+      visitDateRange
+    )
+  ) {
+    return false;
+  }
   const q = search.trim().toLowerCase();
   if (!q) return true;
   return (
@@ -226,38 +261,158 @@ function matchesCarePlanToolbarFilters(
   );
 }
 
-function ContentKindBadge({ kind }: { kind: CarePlanContentKind }) {
+function MedicationIcon() {
   return (
-    <span className={`hc-care-plan-kind hc-care-plan-kind--${kind}`}>
-      {carePlanContentKindLabel(kind)}
-    </span>
+    <svg
+      className="hc-care-plan-doc-icon"
+      xmlns="http://www.w3.org/2000/svg"
+      width="1em"
+      height="1em"
+      viewBox="0 0 16 16"
+      aria-hidden
+    >
+      <path d="M0 0h16v16H0z" fill="none" />
+      <path
+        fill="currentColor"
+        d="M8 3.05A3.5 3.5 0 1 1 12.95 8L8 12.95A3.5 3.5 0 0 1 3.05 8zm2.122 6.364l2.12-2.12a2.5 2.5 0 0 0-3.535-3.536l-2.121 2.12zm-2.268 1.44a.5.5 0 1 0-.708-.707l-1.5 1.5a.5.5 0 1 0 .708.707z"
+      />
+    </svg>
   );
 }
 
-function CarePlanCell({
+function CarePlanConversionBadge({
   link,
   onOpenRows,
 }: {
   link: CarePlanPatientLink;
   onOpenRows: (link: CarePlanPatientLink) => void;
 }) {
-  if (link.carePlanRows.length === 0) return '—';
+  if (link.carePlanRows.length === 0) return null;
 
   const kind = recordHasTemplatedCarePlan(link) ? 'templated' : 'unstructured';
   const rowCount = link.carePlanRows.length;
 
   return (
-    <div className="hc-care-plan-cell">
-      <ContentKindBadge kind={kind} />
-      <button
-        type="button"
-        className="hc-care-plan-attach-btn"
-        aria-label={`View ${rowCount} care plan${rowCount === 1 ? '' : 's'}`}
-        title={`View ${rowCount} care plan${rowCount === 1 ? '' : 's'}`}
-        onClick={() => onOpenRows(link)}
-      >
-        <AttachmentIcon />
-      </button>
+    <button
+      type="button"
+      className={`hc-care-plan-conversion-badge hc-care-plan-kind hc-care-plan-kind--${kind}`}
+      aria-label={`View ${rowCount} care plan${rowCount === 1 ? '' : 's'}`}
+      title={`View ${rowCount} care plan${rowCount === 1 ? '' : 's'}`}
+      onClick={() => onOpenRows(link)}
+    >
+      <span className="hc-care-plan-conversion-badge-label">View Care Plan</span>
+      <DocumentIcon />
+    </button>
+  );
+}
+
+function EmarConversionBadge({
+  link,
+  onOpenRows,
+}: {
+  link: CarePlanPatientLink;
+  onOpenRows: (link: CarePlanPatientLink) => void;
+}) {
+  if (link.emarRows.length === 0) return null;
+
+  const rowCount = link.emarRows.length;
+
+  return (
+    <button
+      type="button"
+      className="hc-care-plan-conversion-badge hc-care-plan-kind hc-care-plan-kind--templated"
+      aria-label={`View ${rowCount} eMAR medication${rowCount === 1 ? '' : 's'}`}
+      title={`View ${rowCount} eMAR medication${rowCount === 1 ? '' : 's'}`}
+      onClick={() => onOpenRows(link)}
+    >
+      <span className="hc-care-plan-conversion-badge-label">View eMAR</span>
+      <MedicationIcon />
+    </button>
+  );
+}
+
+function EmarConversionCell({
+  link,
+  disabled,
+  onOpenRows,
+  onToggleEmarCompleted,
+}: {
+  link: CarePlanPatientLink;
+  disabled?: boolean;
+  onOpenRows: (link: CarePlanPatientLink) => void;
+  onToggleEmarCompleted: (recordId: string, completed: boolean) => void;
+}) {
+  const hasBadge = link.emarRows.length > 0;
+
+  if (!hasBadge) {
+    return <span className="hc-care-plan-no-emar">No eMAR</span>;
+  }
+
+  return (
+    <div className="hc-care-plan-conversion-cell">
+      <EmarConversionBadge link={link} onOpenRows={onOpenRows} />
+      <label className="hc-care-plan-conversion-checkbox">
+        <input
+          type="checkbox"
+          className="hc-status-checkbox"
+          checked={!!link.emarCompletedAt}
+          disabled={disabled}
+          onChange={() => onToggleEmarCompleted(link.recordId, !link.emarCompletedAt)}
+        />
+        <span>eMAR Entered in Epic</span>
+      </label>
+    </div>
+  );
+}
+
+function CarePlanConversionCell({
+  link,
+  mode,
+  disabled,
+  onOpenRows,
+  onToggleCarePlanCompleted,
+}: {
+  link: CarePlanPatientLink;
+  mode: 'pending' | 'completed';
+  disabled?: boolean;
+  onOpenRows: (link: CarePlanPatientLink) => void;
+  onToggleCarePlanCompleted: (recordId: string, completed: boolean) => void;
+}) {
+  const isPending = mode === 'pending';
+  const hasBadge = link.carePlanRows.length > 0;
+
+  if (!isPending && !link.carePlanCompletedAt && !hasBadge) {
+    return null;
+  }
+
+  return (
+    <div className="hc-care-plan-conversion-cell">
+      {hasBadge ? (
+        <CarePlanConversionBadge link={link} onOpenRows={onOpenRows} />
+      ) : isPending ? (
+        <span className="hc-muted">—</span>
+      ) : null}
+      {isPending ? (
+        <label className="hc-care-plan-conversion-checkbox">
+          <input
+            type="checkbox"
+            className="hc-status-checkbox"
+            checked={!!link.carePlanCompletedAt}
+            disabled={disabled}
+            onChange={() =>
+              onToggleCarePlanCompleted(link.recordId, !link.carePlanCompletedAt)
+            }
+          />
+          <span>Care Plan Entered in Epic</span>
+        </label>
+      ) : link.carePlanCompletedAt ? (
+        <CarePlanConversionCompletedCell
+          completedAt={link.carePlanCompletedAt}
+          completedBy={link.carePlanCompletedBy}
+          disabled={disabled}
+          onUndo={() => onToggleCarePlanCompleted(link.recordId, false)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -293,49 +448,6 @@ function formatCarePlanCompletedAt(iso: string): string {
   return `${month} ${d.getDate()} ${hours}:${minutes}`;
 }
 
-function CarePlanConversionStatusCell({
-  recordId,
-  disabled,
-  onSelectConverted,
-}: {
-  recordId: string;
-  disabled?: boolean;
-  onSelectConverted: () => void;
-}) {
-  return (
-    <div className="hc-status-conversion">
-      <div
-        className="hc-status-radios"
-        role="radiogroup"
-        aria-label="Care plan conversion status"
-      >
-        <label className="hc-status-radio-choice">
-          <input
-            type="radio"
-            name={`care-plan-status-${recordId}`}
-            className="hc-status-radio"
-            checked
-            disabled={disabled}
-            readOnly
-          />
-          <span>Pending</span>
-        </label>
-        <label className="hc-status-radio-choice">
-          <input
-            type="radio"
-            name={`care-plan-status-${recordId}`}
-            className="hc-status-radio"
-            checked={false}
-            disabled={disabled}
-            onChange={() => onSelectConverted()}
-          />
-          <span>Converted</span>
-        </label>
-      </div>
-    </div>
-  );
-}
-
 function CarePlanConversionCompletedCell({
   completedAt,
   completedBy,
@@ -369,6 +481,56 @@ function CarePlanConversionCompletedCell({
   );
 }
 
+const PENDING_CARE_PLAN_TABLE_COLUMNS = [
+  'mrn',
+  'gcn',
+  'pathway',
+  'ic-lead',
+  'hosp-dc',
+  'latest',
+  'lvd',
+  'eligibility',
+  'conversion',
+  'emar-conversion',
+] as const;
+
+function carePlanColumnClass(columnId: string): string {
+  return `hc-care-plan-col-${columnId}`;
+}
+
+function CarePlanTableHeaderCell({
+  columnId,
+  className,
+  resizable,
+  onStartResize,
+  children,
+}: {
+  columnId: string;
+  className?: string;
+  resizable: boolean;
+  onStartResize: (columnId: string, clientX: number) => void;
+  children: ReactNode;
+}) {
+  return (
+    <th className={className}>
+      {children}
+      {resizable ? (
+        <span
+          className="hc-table-col-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={`Resize ${columnId} column`}
+          onMouseDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onStartResize(columnId, event.clientX);
+          }}
+        />
+      ) : null}
+    </th>
+  );
+}
+
 function CarePlanPatientsTable({
   links,
   mode,
@@ -377,6 +539,10 @@ function CarePlanPatientsTable({
   updatingRecordId,
   onOpenRows,
   onToggleCarePlanCompleted,
+  onOpenEmarRows,
+  onToggleEmarCompleted,
+  visitCountsByEnrollId,
+  hasServiceDataImports,
 }: {
   links: CarePlanPatientLink[];
   mode: 'pending' | 'completed';
@@ -385,18 +551,34 @@ function CarePlanPatientsTable({
   updatingRecordId: string | null;
   onOpenRows: (link: CarePlanPatientLink) => void;
   onToggleCarePlanCompleted: (recordId: string, completed: boolean) => void;
+  onOpenEmarRows?: (link: CarePlanPatientLink) => void;
+  onToggleEmarCompleted?: (recordId: string, completed: boolean) => void;
+  visitCountsByEnrollId: ReadonlyMap<string, number> | null;
+  hasServiceDataImports: boolean;
 }) {
   const isPending = mode === 'pending';
+  const tableRef = useRef<HTMLTableElement>(null);
+  const columnIds = isPending ? PENDING_CARE_PLAN_TABLE_COLUMNS : [];
+  const { getColumnStyle, startResize } = useResizableTableColumns(
+    tableRef,
+    columnIds,
+    isPending
+  );
 
   const renderSortableHeader = (
     label: string,
     key: CarePlanTableSortKey,
-    className?: string
+    columnId: string
   ) => {
     const active = tableSort?.key === key;
     const direction = active ? tableSort.direction : null;
     return (
-      <th className={className}>
+      <CarePlanTableHeaderCell
+        columnId={columnId}
+        className={carePlanColumnClass(columnId)}
+        resizable={isPending}
+        onStartResize={startResize}
+      >
         <button
           type="button"
           className={`hc-table-sort${direction ? ` hc-table-sort--${direction}` : ''}`}
@@ -408,47 +590,111 @@ function CarePlanPatientsTable({
           {label}
           <span className="hc-table-sort-indicator" aria-hidden />
         </button>
-      </th>
+      </CarePlanTableHeaderCell>
     );
   };
 
+  const pendingColumns = isPending ? PENDING_CARE_PLAN_TABLE_COLUMNS : null;
+
   return (
-    <div className="hc-table-wrap hc-table-wrap--wide hc-table-wrap--fill-main">
+    <div
+      className={`hc-table-wrap hc-table-wrap--wide hc-table-wrap--fill-main${
+        isPending ? ' hc-table-wrap--resizable-columns' : ''
+      }`}
+    >
       <table
+        ref={tableRef}
         className={`hc-table hc-table--grid hc-table--compact hc-table--care-plan-patients${
-          isPending ? '' : ' hc-table--care-plan-patients-completed'
+          isPending ? ' hc-table--care-plan-patients-resizable' : ' hc-table--care-plan-patients-completed'
         }`}
       >
         <colgroup>
-          <col className="hc-care-plan-col-mrn" />
-          <col className="hc-care-plan-col-gcn" />
-          <col className="hc-care-plan-col-pathway" />
-          <col className="hc-care-plan-col-ic-lead" />
-          <col className="hc-care-plan-col-hosp-dc" />
-          <col className="hc-care-plan-col-plan" />
-          <col className="hc-care-plan-col-latest" />
-          <col className="hc-care-plan-col-lvd" />
-          {isPending && <col className="hc-care-plan-col-eligibility" />}
-          <col className="hc-care-plan-col-care-plan-status" />
+          {pendingColumns ? (
+            pendingColumns.map((columnId) => (
+              <col
+                key={columnId}
+                className={carePlanColumnClass(columnId)}
+                style={getColumnStyle(columnId)}
+              />
+            ))
+          ) : (
+            <>
+              <col className="hc-care-plan-col-mrn" />
+              <col className="hc-care-plan-col-gcn" />
+              <col className="hc-care-plan-col-pathway" />
+              <col className="hc-care-plan-col-ic-lead" />
+              <col className="hc-care-plan-col-hosp-dc" />
+              <col className="hc-care-plan-col-latest" />
+              <col className="hc-care-plan-col-lvd" />
+              <col className="hc-care-plan-col-conversion" />
+            </>
+          )}
         </colgroup>
         <thead>
           <tr>
-            <th>MRN</th>
-            <th>GC #</th>
-            <th>Pathway</th>
-            <th>IC Lead</th>
-            {renderSortableHeader('Hospital DC Date', 'hosp_dc', 'hc-care-plan-col-hosp-dc')}
-            <th>Care Plan</th>
-            {renderSortableHeader(
-              'Latest Care Plan Date',
-              'latest_care_plan',
-              'hc-care-plan-col-latest'
-            )}
-            {renderSortableHeader('LVD', 'lvd', 'hc-care-plan-col-lvd')}
+            <CarePlanTableHeaderCell
+              columnId="mrn"
+              className={carePlanColumnClass('mrn')}
+              resizable={isPending}
+              onStartResize={startResize}
+            >
+              MRN
+            </CarePlanTableHeaderCell>
+            <CarePlanTableHeaderCell
+              columnId="gcn"
+              className={carePlanColumnClass('gcn')}
+              resizable={isPending}
+              onStartResize={startResize}
+            >
+              GC #
+            </CarePlanTableHeaderCell>
+            <CarePlanTableHeaderCell
+              columnId="pathway"
+              className={carePlanColumnClass('pathway')}
+              resizable={isPending}
+              onStartResize={startResize}
+            >
+              Pathway
+            </CarePlanTableHeaderCell>
+            <CarePlanTableHeaderCell
+              columnId="ic-lead"
+              className={carePlanColumnClass('ic-lead')}
+              resizable={isPending}
+              onStartResize={startResize}
+            >
+              IC Lead
+            </CarePlanTableHeaderCell>
+            {renderSortableHeader('Hospital DC Date', 'hosp_dc', 'hosp-dc')}
+            {renderSortableHeader('Latest Care Plan Date', 'latest_care_plan', 'latest')}
+            {renderSortableHeader('# Visits', 'visit_count', 'lvd')}
             {isPending && (
-              <th className="hc-care-plan-col-eligibility">Episode Conversion Status</th>
+              <CarePlanTableHeaderCell
+                columnId="eligibility"
+                className={carePlanColumnClass('eligibility')}
+                resizable
+                onStartResize={startResize}
+              >
+                Episode Conversion Status
+              </CarePlanTableHeaderCell>
             )}
-            <th className="hc-care-plan-col-care-plan-status">Care Plan Conversion Status</th>
+            <CarePlanTableHeaderCell
+              columnId="conversion"
+              className={carePlanColumnClass('conversion')}
+              resizable={isPending}
+              onStartResize={startResize}
+            >
+              Care Plan Conversion
+            </CarePlanTableHeaderCell>
+            {isPending && (
+              <CarePlanTableHeaderCell
+                columnId="emar-conversion"
+                className={carePlanColumnClass('emar-conversion')}
+                resizable
+                onStartResize={startResize}
+              >
+                eMAR Conversion
+              </CarePlanTableHeaderCell>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -463,13 +709,16 @@ function CarePlanPatientsTable({
                 <td className="hc-care-plan-col-pathway">{link.pathway ?? '—'}</td>
                 <td className="hc-care-plan-col-ic-lead">{link.icLead ?? '—'}</td>
                 <td className="hc-care-plan-col-hosp-dc">{formatSsdbDate(link.hospDcDate)}</td>
-                <td className="hc-care-plan-col-plan">
-                  <CarePlanCell link={link} onOpenRows={onOpenRows} />
-                </td>
                 <td className="hc-care-plan-col-latest">
                   <LatestCarePlanDateCell dateSaved={latestCarePlan?.dateSaved} />
                 </td>
-                <td className="hc-care-plan-col-lvd">{formatSsdbDate(link.lvd)}</td>
+                <td className="hc-care-plan-col-lvd">
+                  {formatPatientVisitCount(
+                    link.enrollId,
+                    visitCountsByEnrollId,
+                    hasServiceDataImports
+                  )}
+                </td>
                 {isPending && (
                   <td className="hc-care-plan-col-eligibility">
                     {link.eligibilityReasons.length
@@ -477,22 +726,25 @@ function CarePlanPatientsTable({
                       : '—'}
                   </td>
                 )}
-                <td className="hc-care-plan-col-care-plan-status">
-                  {isPending ? (
-                    <CarePlanConversionStatusCell
-                      recordId={link.recordId}
-                      disabled={updating}
-                      onSelectConverted={() => onToggleCarePlanCompleted(link.recordId, true)}
-                    />
-                  ) : link.carePlanCompletedAt ? (
-                    <CarePlanConversionCompletedCell
-                      completedAt={link.carePlanCompletedAt}
-                      completedBy={link.carePlanCompletedBy}
-                      disabled={updating}
-                      onUndo={() => onToggleCarePlanCompleted(link.recordId, false)}
-                    />
-                  ) : null}
+                <td className="hc-care-plan-col-conversion">
+                  <CarePlanConversionCell
+                    link={link}
+                    mode={mode}
+                    disabled={updating}
+                    onOpenRows={onOpenRows}
+                    onToggleCarePlanCompleted={onToggleCarePlanCompleted}
+                  />
                 </td>
+                {isPending && onOpenEmarRows && onToggleEmarCompleted && (
+                  <td className="hc-care-plan-col-emar-conversion">
+                    <EmarConversionCell
+                      link={link}
+                      disabled={updating}
+                      onOpenRows={onOpenEmarRows}
+                      onToggleEmarCompleted={onToggleEmarCompleted}
+                    />
+                  </td>
+                )}
               </tr>
             );
           })}
@@ -531,14 +783,31 @@ function formatPercent(count: number, total: number): string {
 
 function CarePlanStatCount({ count, total }: { count: number; total: number }) {
   return (
-    <strong>
-      {count}
+    <strong className="hc-care-plan-stat-count">
+      <span className="hc-care-plan-stat-numerator">{count}</span>
       {total > 0 ? (
         <span className="hc-care-plan-stat-fraction">
           /{total} ({formatPercent(count, total)})
         </span>
       ) : null}
     </strong>
+  );
+}
+
+function CarePlanStatLabel({
+  line1,
+  line2,
+  className,
+}: {
+  line1: string;
+  line2: string;
+  className?: string;
+}) {
+  return (
+    <span className={['hc-care-plan-stat-label', className].filter(Boolean).join(' ')}>
+      <span className="hc-care-plan-stat-label-line">{line1}</span>
+      <span className="hc-care-plan-stat-label-line">{line2}</span>
+    </span>
   );
 }
 
@@ -566,7 +835,8 @@ interface CoverageStatButtonProps<T extends string> {
   filter: T;
   activeFilter: T;
   count: number;
-  label: string;
+  labelLine1: string;
+  labelLine2: string;
   className: string;
   onFilterChange: (filter: T) => void;
   clearValue?: T;
@@ -578,7 +848,8 @@ function CoverageStatButton<T extends string>({
   filter,
   activeFilter,
   count,
-  label,
+  labelLine1,
+  labelLine2,
   className,
   onFilterChange,
   clearValue = 'all' as T,
@@ -594,12 +865,12 @@ function CoverageStatButton<T extends string>({
       aria-pressed={active}
       onClick={() => onFilterChange(active ? clearValue : filter)}
     >
+      <CarePlanStatLabel line1={labelLine1} line2={labelLine2} className={labelClassName} />
       {denominator != null ? (
         <CarePlanStatCount count={count} total={denominator} />
       ) : (
         <strong>{count}</strong>
       )}
-      <span className={labelClassName}>{label}</span>
     </button>
   );
 }
@@ -637,10 +908,12 @@ function WithCarePlanStatGroup({
           onFilterChange(activeFilter === 'with_care_plan' ? 'all' : 'with_care_plan')
         }
       >
+        <CarePlanStatLabel
+          line1="Care Plan"
+          line2="Data Linked"
+          className="hc-care-plan-stat-label--linked"
+        />
         <CarePlanStatCount count={summary.withCarePlanCount} total={requiringCarePlanTotal} />
-        <span className="hc-care-plan-stat-label hc-care-plan-stat-label--linked">
-          Care Plan Data Linked
-        </span>
       </button>
       {(summary.withTemplatedRecordCount > 0 ||
         summary.onlyUnstructuredRecordCount > 0 ||
@@ -657,11 +930,11 @@ function WithCarePlanStatGroup({
                 onFilterChange(activeFilter === 'templated' ? 'all' : 'templated')
               }
             >
+              <CarePlanStatLabel line1="Conversion" line2="Template Used" />
               <CarePlanStatCount
                 count={summary.withTemplatedRecordCount}
                 total={linkedTotal}
               />
-              <span>Conversion Template Used</span>
             </button>
           )}
           {summary.onlyUnstructuredRecordCount > 0 && (
@@ -675,11 +948,11 @@ function WithCarePlanStatGroup({
                 onFilterChange(activeFilter === 'unstructured_only' ? 'all' : 'unstructured_only')
               }
             >
+              <CarePlanStatLabel line1="Conversion" line2="Template Not Used" />
               <CarePlanStatCount
                 count={summary.onlyUnstructuredRecordCount}
                 total={linkedTotal}
               />
-              <span>Conversion Template Not Used</span>
             </button>
           )}
           {summary.carePlanUpdateRequiredCount > 0 && (
@@ -693,11 +966,11 @@ function WithCarePlanStatGroup({
                 onFilterChange(activeFilter === 'update_required' ? 'all' : 'update_required')
               }
             >
+              <CarePlanStatLabel line1="Care Plan" line2="Update Required" />
               <CarePlanStatCount
                 count={summary.carePlanUpdateRequiredCount}
                 total={linkedTotal}
               />
-              <span>Care Plan Update Required</span>
             </button>
           )}
         </div>
@@ -708,19 +981,46 @@ function WithCarePlanStatGroup({
 
 interface CarePlanConversionPanelProps {
   hasCarePlanImports: boolean;
+  hasServiceDataImports: boolean;
+  serviceDataRefreshKey: string;
   patientLinks: CarePlanPatientLink[];
+  fetchSsdbServiceDateBounds: () => Promise<{
+    from: string;
+    to: string;
+    error: string | null;
+  }>;
+  fetchVisitCountsByEnrollIdInDateRange: (
+    startDate: string,
+    endDate: string
+  ) => Promise<{ visitCountsByEnrollId: Map<string, number>; error: string | null }>;
+  fetchPatientServicesInDateRange: (
+    enrollId: string,
+    startDate: string,
+    endDate: string
+  ) => Promise<{
+    services: ServiceDayService[];
+    serviceDetailsByCalendarKey: Map<string, PatientSsdbServiceDetail>;
+    error: string | null;
+  }>;
   updatingRecordId: string | null;
   onToggleCarePlanCompleted: (recordId: string, completed: boolean) => void;
+  onToggleEmarCompleted: (recordId: string, completed: boolean) => void;
 }
 
 export function CarePlanConversionPanel({
   hasCarePlanImports,
+  hasServiceDataImports,
+  serviceDataRefreshKey,
   patientLinks,
+  fetchSsdbServiceDateBounds,
+  fetchVisitCountsByEnrollIdInDateRange,
+  fetchPatientServicesInDateRange,
   updatingRecordId,
   onToggleCarePlanCompleted,
+  onToggleEmarCompleted,
 }: CarePlanConversionPanelProps) {
   const [patientFilter, setPatientFilter] = useState<CarePlanPatientFilter>('all');
-  const [selectedPatientCarePlans, setSelectedPatientCarePlans] =
+  const [selectedPatientOverview, setSelectedPatientOverview] =
     useState<CarePlanPatientLink | null>(null);
   const [search, setSearch] = useState('');
   const [pathwayCarePathFilter, setPathwayCarePathFilter] =
@@ -729,11 +1029,13 @@ export function CarePlanConversionPanel({
   const [episodeConversionStatusFilter, setEpisodeConversionStatusFilter] = useState<
     string[] | null
   >(null);
-  const defaultLvdDateRange = useMemo(
-    () => computeDefaultLvdDateRange(patientLinks),
-    [patientLinks]
+  const emptyVisitDateRange = useMemo<CarePlanDateRange>(() => ({ from: '', to: '' }), []);
+  const [defaultVisitDateRange, setDefaultVisitDateRange] =
+    useState<CarePlanDateRange>(emptyVisitDateRange);
+  const [visitDateRange, setVisitDateRange] = useState<CarePlanDateRange>(emptyVisitDateRange);
+  const [visitCountsByEnrollId, setVisitCountsByEnrollId] = useState<Map<string, number> | null>(
+    () => new Map()
   );
-  const [lvdDateRange, setLvdDateRange] = useState<CarePlanLvdDateRange>(defaultLvdDateRange);
   const [tableSort, setTableSort] = useState<{
     key: CarePlanTableSortKey;
     direction: SortDirection;
@@ -760,8 +1062,56 @@ export function CarePlanConversionPanel({
   );
 
   useEffect(() => {
-    setLvdDateRange(defaultLvdDateRange);
-  }, [defaultLvdDateRange]);
+    if (!hasServiceDataImports) {
+      setDefaultVisitDateRange(emptyVisitDateRange);
+      setVisitDateRange(emptyVisitDateRange);
+      setVisitCountsByEnrollId(new Map());
+      return;
+    }
+
+    let cancelled = false;
+    void fetchSsdbServiceDateBounds().then(({ from, to }) => {
+      if (cancelled) return;
+      const bounds = { from, to };
+      setDefaultVisitDateRange(bounds);
+      setVisitDateRange(bounds);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    hasServiceDataImports,
+    serviceDataRefreshKey,
+    fetchSsdbServiceDateBounds,
+    emptyVisitDateRange,
+  ]);
+
+  useEffect(() => {
+    if (!hasServiceDataImports || !visitDateRangeIsActive(visitDateRange)) {
+      setVisitCountsByEnrollId(new Map());
+      return;
+    }
+
+    let cancelled = false;
+    setVisitCountsByEnrollId(null);
+    void fetchVisitCountsByEnrollIdInDateRange(visitDateRange.from, visitDateRange.to).then(
+      ({ visitCountsByEnrollId: counts }) => {
+        if (!cancelled) {
+          setVisitCountsByEnrollId(counts);
+        }
+      }
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    hasServiceDataImports,
+    serviceDataRefreshKey,
+    visitDateRange,
+    fetchVisitCountsByEnrollIdInDateRange,
+  ]);
 
   const toggleTableSort = (key: CarePlanTableSortKey) => {
     setTableSort((prev) => {
@@ -799,7 +1149,8 @@ export function CarePlanConversionPanel({
     isPathwayCarePathFilterActive(pathwayCarePathFilter) ||
     icLeadFilter !== null ||
     episodeConversionStatusFilter !== null ||
-    !lvdDateRangesEqual(lvdDateRange, defaultLvdDateRange);
+    (hasServiceDataImports &&
+      !carePlanDateRangesEqual(visitDateRange, defaultVisitDateRange));
 
   const toolbarScopedLinks = useMemo(
     () =>
@@ -811,7 +1162,8 @@ export function CarePlanConversionPanel({
           pathwayCarePathGroups,
           icLeadFilter,
           episodeConversionStatusFilter,
-          lvdDateRange,
+          visitDateRange,
+          visitCountsByEnrollId,
           icLeadOptions
         )
       ),
@@ -822,7 +1174,8 @@ export function CarePlanConversionPanel({
       pathwayCarePathGroups,
       icLeadFilter,
       episodeConversionStatusFilter,
-      lvdDateRange,
+      visitDateRange,
+      visitCountsByEnrollId,
       icLeadOptions,
     ]
   );
@@ -844,7 +1197,8 @@ export function CarePlanConversionPanel({
             pathwayCarePathGroups,
             icLeadFilter,
             episodeConversionStatusFilter,
-            lvdDateRange,
+            visitDateRange,
+            visitCountsByEnrollId,
             icLeadOptions
           )
         ),
@@ -856,20 +1210,29 @@ export function CarePlanConversionPanel({
       pathwayCarePathGroups,
       icLeadFilter,
       episodeConversionStatusFilter,
-      lvdDateRange,
+      visitDateRange,
+      visitCountsByEnrollId,
       icLeadOptions,
     ]
   );
 
   const pendingPatientLinks = useMemo(() => {
-    const pending = filteredPatientLinks.filter((link) => !link.carePlanCompletedAt);
-    return tableSort ? sortCarePlanPatientLinks(pending, tableSort) : pending;
-  }, [filteredPatientLinks, tableSort]);
+    const pending = filteredPatientLinks.filter(
+      (link) => !isCarePlanConversionRowComplete(link)
+    );
+    return tableSort
+      ? sortCarePlanPatientLinks(pending, tableSort, visitCountsByEnrollId)
+      : pending;
+  }, [filteredPatientLinks, tableSort, visitCountsByEnrollId]);
 
   const completedPatientLinks = useMemo(() => {
-    const completed = filteredPatientLinks.filter((link) => link.carePlanCompletedAt);
-    return tableSort ? sortCarePlanPatientLinks(completed, tableSort) : completed;
-  }, [filteredPatientLinks, tableSort]);
+    const completed = filteredPatientLinks.filter((link) =>
+      isCarePlanConversionRowComplete(link)
+    );
+    return tableSort
+      ? sortCarePlanPatientLinks(completed, tableSort, visitCountsByEnrollId)
+      : completed;
+  }, [filteredPatientLinks, tableSort, visitCountsByEnrollId]);
 
   if (!hasCarePlanImports) {
     return (
@@ -892,15 +1255,13 @@ export function CarePlanConversionPanel({
         stackExpandMode === 'main' ? ' hc-epic-table-stack--main-expanded' : ''
       }${stackExpandMode === 'split' ? ' hc-epic-table-stack--split-expanded' : ''}`}
     >
-      {selectedPatientCarePlans && (
-        <CarePlanRowsListModal
-          mrn={selectedPatientCarePlans.mrn}
-          rows={selectedPatientCarePlans.carePlanRows}
-          pathway={selectedPatientCarePlans.pathway}
-          carePath={selectedPatientCarePlans.carePath}
-          icLead={selectedPatientCarePlans.icLead}
-          hospDcDate={selectedPatientCarePlans.hospDcDate}
-          onClose={() => setSelectedPatientCarePlans(null)}
+      {selectedPatientOverview && (
+        <PatientCareOverviewModal
+          link={selectedPatientOverview}
+          hasServiceDataImports={hasServiceDataImports}
+          serviceDataRefreshKey={serviceDataRefreshKey}
+          fetchPatientServicesInDateRange={fetchPatientServicesInDateRange}
+          onClose={() => setSelectedPatientOverview(null)}
         />
       )}
       <section className="hc-epic-split-panel hc-epic-split-panel--main hc-care-plan-conversion">
@@ -924,7 +1285,8 @@ export function CarePlanConversionPanel({
           filter="all"
           activeFilter={patientFilter}
           count={displaySummary.totalRecordCount}
-          label="Episodes for Care Planning"
+          labelLine1="Episodes for"
+          labelLine2="Care Planning"
           className="hc-care-plan-scope-stat"
           onFilterChange={setPatientFilter}
         />
@@ -939,8 +1301,9 @@ export function CarePlanConversionPanel({
           activeFilter={patientFilter}
           count={displaySummary.withoutCarePlanCount}
           denominator={requiringCarePlanTotal}
-          label="No Care Plan Data"
-          labelClassName="hc-care-plan-stat-label hc-care-plan-stat-label--no-data"
+          labelLine1="No Care"
+          labelLine2="Plan Data"
+          labelClassName="hc-care-plan-stat-label--no-data"
           className="hc-reconcile-stat--unmatched"
           onFilterChange={setPatientFilter}
         />
@@ -990,30 +1353,32 @@ export function CarePlanConversionPanel({
               maxLabelsBeforeCount={1}
             />
           </div>
-          <div
-            className="hc-toolbar-field hc-toolbar-field--lvd"
-            role="group"
-            aria-label="Filter by LVD date range"
-          >
-            LVD
-            <span className="hc-toolbar-lvd-range">
-              <ToolbarLvdDateInput
-                value={lvdDateRange.from}
-                max={lvdDateRange.to || undefined}
-                ariaLabel="LVD from date"
-                onChange={(from) => setLvdDateRange((prev) => ({ ...prev, from }))}
-              />
-              <span className="hc-toolbar-lvd-range-sep" aria-hidden>
-                –
+          {hasServiceDataImports && (
+            <div
+              className="hc-toolbar-field hc-toolbar-field--lvd"
+              role="group"
+              aria-label="Filter by SSDB service visit date range"
+            >
+              Visit
+              <span className="hc-toolbar-lvd-range">
+                <ToolbarLvdDateInput
+                  value={visitDateRange.from}
+                  max={visitDateRange.to || undefined}
+                  ariaLabel="Visit from date"
+                  onChange={(from) => setVisitDateRange((prev) => ({ ...prev, from }))}
+                />
+                <span className="hc-toolbar-lvd-range-sep" aria-hidden>
+                  –
+                </span>
+                <ToolbarLvdDateInput
+                  value={visitDateRange.to}
+                  min={visitDateRange.from || undefined}
+                  ariaLabel="Visit to date"
+                  onChange={(to) => setVisitDateRange((prev) => ({ ...prev, to }))}
+                />
               </span>
-              <ToolbarLvdDateInput
-                value={lvdDateRange.to}
-                min={lvdDateRange.from || undefined}
-                ariaLabel="LVD to date"
-                onChange={(to) => setLvdDateRange((prev) => ({ ...prev, to }))}
-              />
-            </span>
-          </div>
+            </div>
+          )}
           {hasActiveToolbarFilters && (
             <button
               type="button"
@@ -1023,7 +1388,7 @@ export function CarePlanConversionPanel({
                 setPathwayCarePathFilter(PATHWAY_CARE_PATH_FILTER_ALL);
                 setIcLeadFilter(null);
                 setEpisodeConversionStatusFilter(null);
-                setLvdDateRange(defaultLvdDateRange);
+                setVisitDateRange(defaultVisitDateRange);
               }}
             >
               Clear Filters
@@ -1047,8 +1412,12 @@ export function CarePlanConversionPanel({
           tableSort={tableSort}
           onToggleTableSort={toggleTableSort}
           updatingRecordId={updatingRecordId}
-          onOpenRows={setSelectedPatientCarePlans}
+          onOpenRows={setSelectedPatientOverview}
           onToggleCarePlanCompleted={onToggleCarePlanCompleted}
+          onOpenEmarRows={setSelectedPatientOverview}
+          onToggleEmarCompleted={onToggleEmarCompleted}
+          visitCountsByEnrollId={visitCountsByEnrollId}
+          hasServiceDataImports={hasServiceDataImports}
         />
       )}
       </section>
@@ -1080,8 +1449,10 @@ export function CarePlanConversionPanel({
               tableSort={tableSort}
               onToggleTableSort={toggleTableSort}
               updatingRecordId={updatingRecordId}
-              onOpenRows={setSelectedPatientCarePlans}
+              onOpenRows={setSelectedPatientOverview}
               onToggleCarePlanCompleted={onToggleCarePlanCompleted}
+              visitCountsByEnrollId={visitCountsByEnrollId}
+              hasServiceDataImports={hasServiceDataImports}
             />
           )}
         </section>
@@ -1094,17 +1465,21 @@ export function useCarePlanConversionData(
   records: EpicConversionRecord[],
   carePlanRows: import('../carePlan/types').EpicCarePlanRow[],
   importFilenames: Map<string, string>,
-  validatedRecordIds: ReadonlySet<string>
+  validatedRecordIds: ReadonlySet<string>,
+  emarRows: import('../emar/types').EpicEmarRow[] = [],
+  emarImportFilenames: Map<string, string> = new Map()
 ) {
   return useMemo(() => {
     const patientLinks = buildCarePlanPatientLinks(
       records,
       carePlanRows,
       validatedRecordIds,
-      importFilenames
+      importFilenames,
+      emarRows,
+      emarImportFilenames
     );
     const summary = summarizeCarePlanLinks(patientLinks);
 
     return { patientLinks, summary };
-  }, [records, carePlanRows, importFilenames, validatedRecordIds]);
+  }, [records, carePlanRows, importFilenames, validatedRecordIds, emarRows, emarImportFilenames]);
 }

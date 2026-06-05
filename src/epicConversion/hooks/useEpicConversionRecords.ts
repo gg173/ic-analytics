@@ -6,6 +6,17 @@ import type {
   EpicConversionRecord,
   IclDecision,
 } from '../types';
+import { batchUpsertEpicConversionRecordsById } from '../ingest/batchEpicConversionWrites';
+import {
+  mergeRecordPatches,
+  prependInsertedRecords,
+} from '../ingest/mergeEpicConversionRecords';
+import {
+  buildSsdbEnrolmentUpsertPayload,
+  enrolmentRowsMatchForIngest,
+  ssdbEnrolmentChangeFingerprint,
+  SSDB_ENROLMENT_SYNC_FIELD_NAMES,
+} from '../ingest/ssdbEnrolmentIngest';
 import {
   buildSsdbAbsenceDischargeUpdate,
   enrollIdsAbsentFromSsdbUpload,
@@ -38,6 +49,8 @@ export interface EpicConversionInsertOptions {
 export interface EpicConversionInsertResult {
   error: string | null;
   inserted: number;
+  updated: number;
+  unchanged: number;
   skippedDuplicates: number;
   autoDischarged: number;
   strategyBreakdown: StrategyBreakdown;
@@ -74,41 +87,45 @@ export function useEpicConversionRecords() {
     async (
       uploadEnrollIds: ReadonlySet<string>,
       dischargedBy: string
-    ): Promise<{ error: string | null; count: number }> => {
+    ): Promise<{
+      error: string | null;
+      count: number;
+      patches: Map<string, Partial<EpicConversionRecord>>;
+    }> => {
+      const patches = new Map<string, Partial<EpicConversionRecord>>();
       const { data, error: fetchError } = await supabase
         .from('epic_conversion_records')
         .select('id, enroll_id, lvd, hosp_dc_date, registration_date, pathway')
         .not('enroll_id', 'is', null)
         .is('status', null);
 
-      if (fetchError) return { error: fetchError.message, count: 0 };
+      if (fetchError) return { error: fetchError.message, count: 0, patches };
 
       const activeRecords = (data ?? []) as Pick<
         EpicConversionRecord,
         'id' | 'enroll_id' | 'lvd' | 'hosp_dc_date' | 'registration_date' | 'pathway'
       >[];
       const absentEnrollIds = enrollIdsAbsentFromSsdbUpload(activeRecords, uploadEnrollIds);
-      if (!absentEnrollIds.length) return { error: null, count: 0 };
+      if (!absentEnrollIds.length) return { error: null, count: 0, patches };
 
       const absentEnrollIdSet = new Set(absentEnrollIds);
       const recordsToDischarge = activeRecords.filter(
         (r) => r.enroll_id && absentEnrollIdSet.has(r.enroll_id)
       );
       const dischargedAt = new Date().toISOString();
-      let count = 0;
-
-      for (const record of recordsToDischarge) {
+      const upsertPayloads = recordsToDischarge.map((record) => {
         const update = buildSsdbAbsenceDischargeUpdate(record, dischargedBy, dischargedAt);
-        const { error: updateError } = await supabase
-          .from('epic_conversion_records')
-          .update(update)
-          .eq('id', record.id);
+        patches.set(record.id, {
+          ...update,
+          updated_at: dischargedAt,
+        });
+        return { id: record.id, ...update };
+      });
 
-        if (updateError) return { error: updateError.message, count };
-        count += 1;
-      }
+      const { error: writeError } = await batchUpsertEpicConversionRecordsById(upsertPayloads);
+      if (writeError) return { error: writeError, count: 0, patches: new Map() };
 
-      return { error: null, count };
+      return { error: null, count: recordsToDischarge.length, patches };
     },
     []
   );
@@ -118,36 +135,99 @@ export function useEpicConversionRecords() {
     importedBy?: string | null,
     options?: EpicConversionInsertOptions
   ): Promise<EpicConversionInsertResult> => {
+    const emptyResult = (
+      overrides: Partial<EpicConversionInsertResult> = {}
+    ): EpicConversionInsertResult => ({
+      error: null,
+      inserted: 0,
+      updated: 0,
+      unchanged: 0,
+      skippedDuplicates: 0,
+      autoDischarged: 0,
+      strategyBreakdown: countStrategyBreakdown([]),
+      ...overrides,
+    });
+
+    const isSsdbUpload = !!options?.ssdbUploadEnrollIds;
+
     const enrollIds = [
       ...new Set(rows.map((row) => row.enroll_id).filter((id): id is string => !!id)),
     ];
 
-    const existingEnrollIds = new Set<string>();
+    type ExistingEnrolmentRow = Pick<
+      EpicConversionRecord,
+      | 'id'
+      | 'enroll_id'
+      | (typeof SSDB_ENROLMENT_SYNC_FIELD_NAMES)[number]
+      | 'icl_decision'
+      | 'status'
+      | 'discharge_date'
+      | 'discharge_date_source'
+      | 'discharge_reason'
+    >;
+
+    const existingByEnrollId = new Map<string, ExistingEnrolmentRow>();
+
     for (let i = 0; i < enrollIds.length; i += ENROLL_ID_LOOKUP_CHUNK) {
       const batch = enrollIds.slice(i, i + ENROLL_ID_LOOKUP_CHUNK);
-      const { data, error: lookupError } = await supabase
-        .from('epic_conversion_records')
-        .select('enroll_id')
-        .in('enroll_id', batch);
+      const lookupResult = isSsdbUpload
+        ? await supabase
+            .from('epic_conversion_records')
+            .select(
+              'id, enroll_id, gcn, mrn, pathway, care_path, support_tier, ic_lead, registration_date, hosp_dc_date, episode_conversion_strategy, los, los_category, latest_srv, days_since_lvd, lvd, lvt, source_filename, icl_decision, status, discharge_date, discharge_date_source, discharge_reason'
+            )
+            .in('enroll_id', batch)
+        : await supabase
+            .from('epic_conversion_records')
+            .select('enroll_id')
+            .in('enroll_id', batch);
 
-      if (lookupError) {
-        return {
-          error: lookupError.message,
-          inserted: 0,
-          skippedDuplicates: 0,
-          autoDischarged: 0,
-          strategyBreakdown: countStrategyBreakdown([]),
-        };
+      if (lookupResult.error) {
+        return emptyResult({ error: lookupResult.error.message });
       }
-      for (const row of data ?? []) {
-        if (row.enroll_id) existingEnrollIds.add(row.enroll_id);
+
+      if (isSsdbUpload) {
+        for (const row of (lookupResult.data as ExistingEnrolmentRow[] | null) ?? []) {
+          if (!row.enroll_id || existingByEnrollId.has(row.enroll_id)) continue;
+          existingByEnrollId.set(row.enroll_id, row);
+        }
+      } else {
+        for (const row of lookupResult.data ?? []) {
+          if (!row.enroll_id || existingByEnrollId.has(row.enroll_id)) continue;
+          existingByEnrollId.set(row.enroll_id, { enroll_id: row.enroll_id } as ExistingEnrolmentRow);
+        }
       }
     }
 
-    const rowsToInsert = rows.filter(
-      (row) => !row.enroll_id || !existingEnrollIds.has(row.enroll_id)
-    );
-    const skippedDuplicates = rows.length - rowsToInsert.length;
+    const rowsToInsert: EpicConversionInsertRow[] = [];
+    const rowsToUpdate: { existingId: string; incoming: EpicConversionInsertRow }[] = [];
+    let unchanged = 0;
+
+    for (const row of rows) {
+      if (!row.enroll_id) {
+        rowsToInsert.push(row);
+        continue;
+      }
+      const existing = existingByEnrollId.get(row.enroll_id);
+      if (!existing) {
+        rowsToInsert.push(row);
+        continue;
+      }
+      if (!isSsdbUpload) continue;
+      const incomingFingerprint = ssdbEnrolmentChangeFingerprint(row);
+      if (enrolmentRowsMatchForIngest(existing, row, incomingFingerprint)) {
+        unchanged += 1;
+        continue;
+      }
+      rowsToUpdate.push({ existingId: existing.id, incoming: row });
+    }
+
+    const skippedDuplicates = isSsdbUpload
+      ? unchanged
+      : rows.length - rowsToInsert.length;
+
+    const insertedRecords: EpicConversionRecord[] = [];
+    const recordPatches = new Map<string, Partial<EpicConversionRecord>>();
 
     if (rowsToInsert.length) {
       // Stamp every chunk with one shared timestamp so a single upload groups as
@@ -161,44 +241,87 @@ export function useEpicConversionRecords() {
             imported_at: importedAt,
             imported_by: importedBy ?? null,
           }));
-        const { error: insertError } = await supabase.from('epic_conversion_records').insert(chunk);
+        const { data: insertedChunk, error: insertError } = await supabase
+          .from('epic_conversion_records')
+          .insert(chunk)
+          .select('*');
         if (insertError) {
-          return {
+          return emptyResult({
             error: insertError.message,
-            inserted: 0,
             skippedDuplicates,
-            autoDischarged: 0,
-            strategyBreakdown: countStrategyBreakdown([]),
-          };
+          });
         }
+        insertedRecords.push(...((insertedChunk as EpicConversionRecord[]) ?? []));
       }
     }
 
+    const syncUpsertPayloads = rowsToUpdate.flatMap(({ existingId, incoming }) => {
+      const existing = existingByEnrollId.get(incoming.enroll_id!);
+      if (!existing) return [];
+      const payload = buildSsdbEnrolmentUpsertPayload(existingId, existing, incoming);
+      recordPatches.set(existingId, {
+        ...(payload as Partial<EpicConversionRecord>),
+        updated_at: new Date().toISOString(),
+      });
+      return [payload];
+    });
+
+    const { error: syncWriteError } = await batchUpsertEpicConversionRecordsById(syncUpsertPayloads);
+    if (syncWriteError) {
+      return emptyResult({
+        error: syncWriteError,
+        inserted: rowsToInsert.length,
+        updated: 0,
+        unchanged,
+        skippedDuplicates,
+      });
+    }
+
+    const updated = rowsToUpdate.length;
+
     let autoDischarged = 0;
     if (options?.ssdbUploadEnrollIds && options.dischargedBy) {
-      const { error: reconcileError, count } = await dischargeAbsentFromSsdbUpload(
+      const { error: reconcileError, count, patches } = await dischargeAbsentFromSsdbUpload(
         options.ssdbUploadEnrollIds,
         options.dischargedBy
       );
       if (reconcileError) {
-        return {
+        return emptyResult({
           error: reconcileError,
           inserted: rowsToInsert.length,
+          updated,
+          unchanged,
           skippedDuplicates,
-          autoDischarged: 0,
-          strategyBreakdown: countStrategyBreakdown(rowsToInsert),
-        };
+          strategyBreakdown: countStrategyBreakdown([
+            ...rowsToInsert,
+            ...rowsToUpdate.map(({ incoming }) => incoming),
+          ]),
+        });
       }
       autoDischarged = count;
+      for (const [id, patch] of patches) {
+        recordPatches.set(id, patch);
+      }
     }
 
-    await refresh();
+    if (isSsdbUpload && (insertedRecords.length || recordPatches.size)) {
+      setRecords((prev) =>
+        prependInsertedRecords(mergeRecordPatches(prev, recordPatches), insertedRecords)
+      );
+    } else {
+      await refresh();
+    }
     return {
       error: null,
       inserted: rowsToInsert.length,
+      updated,
+      unchanged,
       skippedDuplicates,
       autoDischarged,
-      strategyBreakdown: countStrategyBreakdown(rowsToInsert),
+      strategyBreakdown: countStrategyBreakdown([
+        ...rowsToInsert,
+        ...rowsToUpdate.map(({ incoming }) => incoming),
+      ]),
     };
   }, [dischargeAbsentFromSsdbUpload, refresh]);
 
@@ -513,6 +636,35 @@ export function useEpicConversionRecords() {
     []
   );
 
+  const setEmarCompletion = useCallback(
+    async (id: string, completedBy: string | null) => {
+      const emar_completed_by = completedBy;
+      const emar_completed_at = completedBy ? new Date().toISOString() : null;
+
+      const { error: updateError } = await supabase
+        .from('epic_conversion_records')
+        .update({ emar_completed_by, emar_completed_at })
+        .eq('id', id);
+
+      if (updateError) return { error: updateError.message };
+
+      setRecords((prev) =>
+        prev.map((r) =>
+          r.id === id
+            ? {
+                ...r,
+                emar_completed_by,
+                emar_completed_at,
+                updated_at: new Date().toISOString(),
+              }
+            : r
+        )
+      );
+      return { error: null as string | null };
+    },
+    []
+  );
+
   const clearCarePlanCompletionForRecords = useCallback(async (ids: string[]) => {
     if (ids.length === 0) {
       return { error: null as string | null, clearedCount: 0 };
@@ -566,6 +718,7 @@ export function useEpicConversionRecords() {
     insertRows,
     setCompletion,
     setCarePlanCompletion,
+    setEmarCompletion,
     clearCarePlanCompletionForRecords,
     changeFromDischargePending,
     changeFromEpisodeConversionPending,

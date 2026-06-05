@@ -3,24 +3,25 @@ import { carePlanContentKindLabel } from '../carePlan/classifyCarePlanContent';
 import { renderClientNeedsGoalsContent } from '../carePlan/formatTemplatedCarePlanText';
 import type { LinkedCarePlanRow } from '../carePlan/types';
 
-function AttachmentIcon() {
+function DocumentIcon() {
   return (
     <svg
-      className="hc-care-plan-attach-icon"
-      viewBox="0 0 16 16"
-      width={14}
-      height={14}
+      className="hc-care-plan-doc-icon"
+      viewBox="0 0 32 32"
+      width="1em"
+      height="1em"
       aria-hidden
     >
       <path
         fill="currentColor"
-        d="M11.5 1.5a3.5 3.5 0 0 0-4.95 0L2.79 5.26a4.75 4.75 0 0 0 6.72 6.72l4.24-4.24a.75.75 0 1 1 1.06 1.06l-4.24 4.24a6.25 6.25 0 1 1-8.84-8.84l3.76-3.76a5 5 0 0 1 7.07 7.07l-4.6 4.6a3.25 3.25 0 1 1-4.6-4.6l3.53-3.53a.75.75 0 1 1 1.06 1.06l-3.53 3.53a1.75 1.75 0 1 0 2.47 2.47l4.6-4.6a3.5 3.5 0 0 0-4.95-4.95Z"
+        d="m25.7 9.3l-7-7c-.2-.2-.4-.3-.7-.3H8c-1.1 0-2 .9-2 2v24c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V10c0-.3-.1-.5-.3-.7M18 4.4l5.6 5.6H18zM24 28H8V4h8v6c0 1.1.9 2 2 2h6z"
       />
+      <path fill="currentColor" d="M10 22h12v2H10zm0-6h12v2H10z" />
     </svg>
   );
 }
 
-export { AttachmentIcon };
+export { DocumentIcon };
 
 interface CarePlanRowDetailModalProps {
   row: LinkedCarePlanRow;

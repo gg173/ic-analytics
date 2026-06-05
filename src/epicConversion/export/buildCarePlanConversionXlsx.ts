@@ -14,11 +14,10 @@ export const CARE_PLAN_CONVERSION_HEADERS = [
   'Pathway',
   'IC Lead',
   'Hospital DC Date',
-  'Care Plan',
   'Latest Care Plan Date',
   'LVD',
   'Episode Conversion Status',
-  'Care Plan Conversion Status',
+  'Care Plan Conversion',
 ] as const;
 
 function formatSsdbDate(value: string | null | undefined): string {
@@ -46,10 +45,9 @@ const CARE_PLAN_COMPLETED_HEADERS = [
   'Pathway',
   'IC Lead',
   'Hospital DC Date',
-  'Care Plan',
   'Latest Care Plan Date',
   'LVD',
-  'Care Plan Conversion Status',
+  'Care Plan Conversion',
 ] as const;
 
 function formatCarePlanCompletedAt(iso: string | null | undefined): string {
@@ -74,6 +72,19 @@ function carePlanConversionStatusLabel(link: CarePlanPatientLink): string {
   return `Converted by ${by} on ${at}`;
 }
 
+function carePlanConversionCellLabel(
+  link: CarePlanPatientLink,
+  mode: 'pending' | 'completed'
+): string {
+  const planPart = carePlanCellLabel(link);
+  const statusPart =
+    mode === 'pending'
+      ? `Care Plan Entered in Epic: ${link.carePlanCompletedAt ? 'Yes' : 'No'}`
+      : carePlanConversionStatusLabel(link);
+  if (!planPart) return statusPart;
+  return `${planPart} — ${statusPart}`;
+}
+
 function linkToPendingSheetRow(
   link: CarePlanPatientLink
 ): Record<(typeof CARE_PLAN_CONVERSION_HEADERS)[number], string> {
@@ -84,13 +95,12 @@ function linkToPendingSheetRow(
     Pathway: link.pathway ?? '',
     'IC Lead': link.icLead ?? '',
     'Hospital DC Date': formatSsdbDate(link.hospDcDate),
-    'Care Plan': carePlanCellLabel(link),
     'Latest Care Plan Date': latestCarePlan?.dateSaved?.trim() ?? '',
     LVD: formatSsdbDate(link.lvd),
     'Episode Conversion Status': link.eligibilityReasons.length
       ? link.eligibilityReasons.map(eligibilityReasonLabel).join(', ')
       : '',
-    'Care Plan Conversion Status': 'Pending',
+    'Care Plan Conversion': carePlanConversionCellLabel(link, 'pending'),
   };
 }
 
@@ -104,10 +114,9 @@ function linkToCompletedSheetRow(
     Pathway: link.pathway ?? '',
     'IC Lead': link.icLead ?? '',
     'Hospital DC Date': formatSsdbDate(link.hospDcDate),
-    'Care Plan': carePlanCellLabel(link),
     'Latest Care Plan Date': latestCarePlan?.dateSaved?.trim() ?? '',
     LVD: formatSsdbDate(link.lvd),
-    'Care Plan Conversion Status': carePlanConversionStatusLabel(link),
+    'Care Plan Conversion': carePlanConversionCellLabel(link, 'completed'),
   };
 }
 

@@ -1,6 +1,10 @@
 import { matchesMultiFilter } from '../components/ToolbarMultiSelect';
 import type { EpicConversionRecord } from '../types';
-import type { SsdbServiceDayRow } from './linkServiceDayCarePlans';
+import {
+  ssdbServiceRowHasCancellation,
+  ssdbServiceRowHasChangeDetected,
+  type SsdbServiceDayRow,
+} from './linkServiceDayCarePlans';
 
 function getWeekStartIso(isoDate: string): string {
   const [year, month, day] = isoDate.split('-').map(Number);
@@ -57,6 +61,10 @@ export function aggregateSsdbServiceDayRows(rows: SsdbServiceDayRow[]): {
   patientCountsByDate: Map<string, number>;
   weekServiceCountsByWeekStart: Map<string, number>;
   weekPatientCountsByWeekStart: Map<string, number>;
+  hasChangedServiceByDate: Map<string, boolean>;
+  hasChangedServiceByWeekStart: Map<string, boolean>;
+  cancelledServiceCountByDate: Map<string, number>;
+  cancelledServiceCountByWeekStart: Map<string, number>;
   enrollIdsByDate: Map<string, Set<string>>;
   enrollIdsByWeekStart: Map<string, Set<string>>;
   ssdbPatientByDate: Map<string, Map<string, { mrn: string | null; pathway: string | null }>>;
@@ -64,6 +72,10 @@ export function aggregateSsdbServiceDayRows(rows: SsdbServiceDayRow[]): {
 } {
   const serviceCountsByDate = new Map<string, number>();
   const ssdbServiceRows: SsdbServiceDayRow[] = [];
+  const hasChangedServiceByDate = new Map<string, boolean>();
+  const hasChangedServiceByWeekStart = new Map<string, boolean>();
+  const cancelledServiceCountByDate = new Map<string, number>();
+  const cancelledServiceCountByWeekStart = new Map<string, number>();
   const enrollIdsByDate = new Map<string, Set<string>>();
   const ssdbPatientByDate = new Map<
     string,
@@ -76,6 +88,15 @@ export function aggregateSsdbServiceDayRows(rows: SsdbServiceDayRow[]): {
     if (!row.srv_date) continue;
     ssdbServiceRows.push(row);
     serviceCountsByDate.set(row.srv_date, (serviceCountsByDate.get(row.srv_date) ?? 0) + 1);
+    if (ssdbServiceRowHasChangeDetected(row)) {
+      hasChangedServiceByDate.set(row.srv_date, true);
+    }
+    if (ssdbServiceRowHasCancellation(row)) {
+      cancelledServiceCountByDate.set(
+        row.srv_date,
+        (cancelledServiceCountByDate.get(row.srv_date) ?? 0) + 1
+      );
+    }
     if (row.enroll_id) {
       const enrollIds = enrollIdsByDate.get(row.srv_date) ?? new Set<string>();
       enrollIds.add(row.enroll_id);
@@ -92,6 +113,15 @@ export function aggregateSsdbServiceDayRows(rows: SsdbServiceDayRow[]): {
     }
 
     const weekStart = getWeekStartIso(row.srv_date);
+    if (ssdbServiceRowHasChangeDetected(row)) {
+      hasChangedServiceByWeekStart.set(weekStart, true);
+    }
+    if (ssdbServiceRowHasCancellation(row)) {
+      cancelledServiceCountByWeekStart.set(
+        weekStart,
+        (cancelledServiceCountByWeekStart.get(weekStart) ?? 0) + 1
+      );
+    }
     if (row.calendar_key) {
       const calendarKeys = calendarKeysByWeekStart.get(weekStart) ?? new Set<string>();
       calendarKeys.add(row.calendar_key);
@@ -124,6 +154,10 @@ export function aggregateSsdbServiceDayRows(rows: SsdbServiceDayRow[]): {
     patientCountsByDate,
     weekServiceCountsByWeekStart,
     weekPatientCountsByWeekStart,
+    hasChangedServiceByDate,
+    hasChangedServiceByWeekStart,
+    cancelledServiceCountByDate,
+    cancelledServiceCountByWeekStart,
     enrollIdsByDate,
     enrollIdsByWeekStart,
     ssdbPatientByDate,

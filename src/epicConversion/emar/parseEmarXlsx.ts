@@ -1,29 +1,35 @@
 import * as XLSX from 'xlsx';
 import { parseDate, pick, str } from '../ingest/mapEpicConversionRow';
-import { dedupeCarePlanInsertRows } from './carePlanDedup';
-import type { CarePlanInsertRow } from './types';
+import { dedupeEmarInsertRows } from './emarDedup';
+import type { EmarInsertRow } from './types';
 
-export const CARE_PLAN_REQUIRED_HEADERS = ['BRN'] as const;
+export const EMAR_REQUIRED_HEADERS = ['BRN'] as const;
 
-const CARE_PLAN_HEADER_ALIASES: Record<string, string[]> = {
+const EMAR_HEADER_ALIASES: Record<string, string[]> = {
   BRN: ['BRN', 'brn'],
   'Client ID': ['Client ID', 'CLIENT ID', 'client id'],
   'Offer ID': ['Offer ID', 'OFFER ID', 'offer id'],
   'GoldCare ID': ['GoldCare ID', 'Goldcare ID', 'GOLDCARE ID', 'goldcare id', 'GC #', 'GC#'],
-  'Patient Name': ['Patient Name', 'PATIENT NAME', 'patient name'],
-  'Client Needs/Goals': [
-    'Client Needs/Goals',
-    'Client Needs / Goals',
-    'CLIENT NEEDS/GOALS',
+  'Medication Name': ['Medication Name', 'MEDICATION NAME', 'medication name'],
+  'Last Admin Date/Time': [
+    'Last Admin Date/Time',
+    'Last Admin Date / Time',
+    'LAST ADMIN DATE/TIME',
   ],
-  'Service/Teaching Plan': [
-    'Service/Teaching Plan',
-    'Service / Teaching Plan',
-    'SERVICE/TEACHING PLAN',
+  Dose: ['Dose', 'DOSE', 'dose'],
+  Route: ['Route', 'ROUTE', 'route'],
+  Frequency: ['Frequency', 'FREQUENCY', 'frequency'],
+  'Total Number of Doses': [
+    'Total Number of Doses',
+    'TOTAL NUMBER OF DOSES',
+    'total number of doses',
   ],
-  Outcomes: ['Outcomes', 'OUTCOMES', 'outcomes'],
-  'Goal Met': ['Goal Met', 'GOAL MET', 'goal met'],
-  'Date Saved': ['Date Saved', 'DATE SAVED', 'date saved'],
+  'Order or Dispensed Date': [
+    'Order or Dispensed Date',
+    'ORDER OR DISPENSED DATE',
+    'order or dispensed date',
+  ],
+  'End Date': ['End Date', 'END DATE', 'end date'],
 };
 
 function headerLookupKey(header: string): string {
@@ -38,7 +44,7 @@ function buildHeaderMap(headers: string[]): Map<string, string> {
   }
 
   const canonical = new Map<string, string>();
-  for (const [canonicalName, aliases] of Object.entries(CARE_PLAN_HEADER_ALIASES)) {
+  for (const [canonicalName, aliases] of Object.entries(EMAR_HEADER_ALIASES)) {
     for (const alias of aliases) {
       const actual = byKey.get(headerLookupKey(alias));
       if (actual) {
@@ -50,10 +56,10 @@ function buildHeaderMap(headers: string[]): Map<string, string> {
   return canonical;
 }
 
-export function validateCarePlanHeaders(headers: string[]): string[] {
+export function validateEmarHeaders(headers: string[]): string[] {
   const errors: string[] = [];
   const map = buildHeaderMap(headers);
-  for (const required of CARE_PLAN_REQUIRED_HEADERS) {
+  for (const required of EMAR_REQUIRED_HEADERS) {
     if (!map.has(required)) {
       errors.push(`Missing required column: ${required}`);
     }
@@ -100,11 +106,40 @@ function parseRawSheet(buf: ArrayBuffer): {
   return { headers, rows, errors };
 }
 
-function mapCarePlanRow(
+function parseDateTime(raw: unknown): string | null {
+  if (raw === null || raw === undefined) return null;
+  if (raw instanceof Date && !Number.isNaN(raw.getTime())) {
+    return raw.toISOString();
+  }
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    if (raw >= 18262 && raw <= 73051) {
+      const epoch = Date.UTC(1899, 11, 30);
+      const ms = epoch + raw * 86400000;
+      const d = new Date(ms);
+      if (!Number.isNaN(d.getTime())) return d.toISOString();
+    }
+    return null;
+  }
+
+  const s = String(raw).trim();
+  if (!s) return null;
+
+  const parsed = Date.parse(s);
+  if (!Number.isNaN(parsed)) {
+    return new Date(parsed).toISOString();
+  }
+
+  const dateOnly = parseDate(raw);
+  if (dateOnly) return `${dateOnly}T12:00:00.000Z`;
+
+  return s;
+}
+
+function mapEmarRow(
   row: Record<string, unknown>,
   headerMap: Map<string, string>,
   rowIndex: number
-): CarePlanInsertRow | null {
+): EmarInsertRow | null {
   const brn = str(pick(row, [headerMap.get('BRN') ?? 'BRN']));
   if (!brn) return null;
 
@@ -113,45 +148,49 @@ function mapCarePlanRow(
     client_id: str(pick(row, [headerMap.get('Client ID') ?? 'Client ID'])),
     offer_id: str(pick(row, [headerMap.get('Offer ID') ?? 'Offer ID'])),
     goldcare_id: str(pick(row, [headerMap.get('GoldCare ID') ?? 'GoldCare ID'])),
-    patient_name: str(pick(row, [headerMap.get('Patient Name') ?? 'Patient Name'])),
-    client_needs_goals: str(
-      pick(row, [headerMap.get('Client Needs/Goals') ?? 'Client Needs/Goals'])
+    medication_name: str(pick(row, [headerMap.get('Medication Name') ?? 'Medication Name'])),
+    last_admin_at: parseDateTime(
+      pick(row, [headerMap.get('Last Admin Date/Time') ?? 'Last Admin Date/Time'])
     ),
-    service_teaching_plan: str(
-      pick(row, [headerMap.get('Service/Teaching Plan') ?? 'Service/Teaching Plan'])
+    dose: str(pick(row, [headerMap.get('Dose') ?? 'Dose'])),
+    route: str(pick(row, [headerMap.get('Route') ?? 'Route'])),
+    frequency: str(pick(row, [headerMap.get('Frequency') ?? 'Frequency'])),
+    total_number_of_doses: str(
+      pick(row, [headerMap.get('Total Number of Doses') ?? 'Total Number of Doses'])
     ),
-    outcomes: str(pick(row, [headerMap.get('Outcomes') ?? 'Outcomes'])),
-    goal_met: str(pick(row, [headerMap.get('Goal Met') ?? 'Goal Met'])),
-    date_saved: parseDate(pick(row, [headerMap.get('Date Saved') ?? 'Date Saved'])),
+    order_or_dispensed_date: parseDate(
+      pick(row, [headerMap.get('Order or Dispensed Date') ?? 'Order or Dispensed Date'])
+    ),
+    end_date: parseDate(pick(row, [headerMap.get('End Date') ?? 'End Date'])),
     row_index: rowIndex,
   };
 }
 
-export interface CarePlanParseResult {
-  rows: CarePlanInsertRow[];
+export interface EmarParseResult {
+  rows: EmarInsertRow[];
   skipped: number;
   skippedDuplicates: number;
   errors: string[];
 }
 
-export function parseCarePlanXlsxBuffer(buf: ArrayBuffer): CarePlanParseResult {
+export function parseEmarXlsxBuffer(buf: ArrayBuffer): EmarParseResult {
   const parsed = parseRawSheet(buf);
   const errors = [...parsed.errors];
   if (!parsed.headers.length) {
     return { rows: [], skipped: 0, skippedDuplicates: 0, errors };
   }
 
-  const headerErrors = validateCarePlanHeaders(parsed.headers);
+  const headerErrors = validateEmarHeaders(parsed.headers);
   if (headerErrors.length) {
     return { rows: [], skipped: 0, skippedDuplicates: 0, errors: [...errors, ...headerErrors] };
   }
 
   const headerMap = buildHeaderMap(parsed.headers);
-  const rows: CarePlanInsertRow[] = [];
+  const rows: EmarInsertRow[] = [];
   let skipped = 0;
 
   parsed.rows.forEach((row, index) => {
-    const mapped = mapCarePlanRow(row, headerMap, index);
+    const mapped = mapEmarRow(row, headerMap, index);
     if (!mapped) {
       skipped += 1;
       return;
@@ -160,9 +199,9 @@ export function parseCarePlanXlsxBuffer(buf: ArrayBuffer): CarePlanParseResult {
   });
 
   if (!rows.length && !errors.length) {
-    errors.push('No care plan rows found in file');
+    errors.push('No eMAR rows found in file');
   }
 
-  const { rows: dedupedRows, skippedDuplicates } = dedupeCarePlanInsertRows(rows);
+  const { rows: dedupedRows, skippedDuplicates } = dedupeEmarInsertRows(rows);
   return { rows: dedupedRows, skipped, skippedDuplicates, errors };
 }

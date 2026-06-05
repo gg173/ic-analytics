@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import {
+  dedupeCarePlanInsertRows,
+  dedupeEpicCarePlanRows,
+  fetchCarePlanFingerprintsFromDb,
+} from '../carePlan/carePlanDedup';
 import { parseCarePlanXlsxBuffer } from '../carePlan/parseCarePlanXlsx';
 import type { CarePlanInsertRow, EpicCarePlanImport, EpicCarePlanRow } from '../carePlan/types';
 import { fetchAllSupabaseRows } from './fetchAllSupabaseRows';
@@ -10,6 +15,7 @@ export interface CarePlanUploadResult {
   error: string | null;
   importId: string | null;
   rowCount: number;
+  skippedDuplicates: number;
   /** All care plan rows after a successful upload refresh. */
   carePlanRows: EpicCarePlanRow[];
   /** All care plan imports after a successful upload refresh. */
@@ -71,9 +77,11 @@ export function useEpicCarePlanImports() {
       return { imports: list, carePlanRows: [], error: rowError.message };
     }
 
-    setCarePlanRows(rowData);
+    const importImportedAtById = new Map(list.map((imp) => [imp.id, imp.imported_at]));
+    const dedupedRows = dedupeEpicCarePlanRows(rowData, importImportedAtById);
+    setCarePlanRows(dedupedRows);
     setLoading(false);
-    return { imports: list, carePlanRows: rowData, error: null };
+    return { imports: list, carePlanRows: dedupedRows, error: null };
   }, []);
 
   useEffect(() => {
@@ -90,8 +98,42 @@ export function useEpicCarePlanImports() {
             error: parsed.errors.slice(0, 5).join('; '),
             importId: null,
             rowCount: 0,
+            skippedDuplicates: 0,
             carePlanRows: [],
             imports: [],
+          };
+        }
+
+        let existingFingerprints: Set<string>;
+        try {
+          existingFingerprints = await fetchCarePlanFingerprintsFromDb();
+        } catch (fetchErr) {
+          return {
+            error:
+              fetchErr instanceof Error
+                ? fetchErr.message
+                : 'Failed to load existing care plan rows for deduplication',
+            importId: null,
+            rowCount: 0,
+            skippedDuplicates: 0,
+            carePlanRows: [],
+            imports: [],
+          };
+        }
+
+        const { rows: dedupedRows, skippedDuplicates: skippedAgainstExisting } =
+          dedupeCarePlanInsertRows(parsed.rows, existingFingerprints);
+        const skippedDuplicates = parsed.skippedDuplicates + skippedAgainstExisting;
+
+        if (!dedupedRows.length) {
+          const refreshed = await refresh();
+          return {
+            error: refreshed.error,
+            importId: null,
+            rowCount: 0,
+            skippedDuplicates,
+            carePlanRows: refreshed.carePlanRows,
+            imports: refreshed.imports,
           };
         }
 
@@ -102,7 +144,7 @@ export function useEpicCarePlanImports() {
             source_filename: file.name,
             imported_at: importedAt,
             imported_by: importedBy ?? null,
-            row_count: parsed.rows.length,
+            row_count: dedupedRows.length,
           })
           .select('*')
           .single();
@@ -112,6 +154,7 @@ export function useEpicCarePlanImports() {
             error: importError?.message ?? 'Failed to save care plan import',
             importId: null,
             rowCount: 0,
+            skippedDuplicates,
             carePlanRows: [],
             imports: [],
           };
@@ -119,8 +162,8 @@ export function useEpicCarePlanImports() {
 
         const importId = (importRow as EpicCarePlanImport).id;
 
-        for (let i = 0; i < parsed.rows.length; i += ROW_CHUNK) {
-          const chunk = parsed.rows.slice(i, i + ROW_CHUNK).map((row) => toDbRow(row, importId));
+        for (let i = 0; i < dedupedRows.length; i += ROW_CHUNK) {
+          const chunk = dedupedRows.slice(i, i + ROW_CHUNK).map((row) => toDbRow(row, importId));
           const { error: rowError } = await supabase
             .from('epic_conversion_care_plan_rows')
             .insert(chunk);
@@ -131,6 +174,7 @@ export function useEpicCarePlanImports() {
               error: rowError.message,
               importId: null,
               rowCount: 0,
+              skippedDuplicates,
               carePlanRows: [],
               imports: [],
             };
@@ -141,7 +185,8 @@ export function useEpicCarePlanImports() {
         return {
           error: refreshed.error,
           importId,
-          rowCount: parsed.rows.length,
+          rowCount: dedupedRows.length,
+          skippedDuplicates,
           carePlanRows: refreshed.carePlanRows,
           imports: refreshed.imports,
         };
@@ -150,6 +195,7 @@ export function useEpicCarePlanImports() {
           error: err instanceof Error ? err.message : 'Upload failed',
           importId: null,
           rowCount: 0,
+          skippedDuplicates: 0,
           carePlanRows: [],
           imports: [],
         };

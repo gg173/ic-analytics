@@ -4,6 +4,7 @@ import { parseEpicConversionXlsxBuffer } from '../epicConversion/ingest/parseEpi
 import { useEpicConversionRecords } from '../epicConversion/hooks/useEpicConversionRecords';
 import { useEpicConversionReports } from '../epicConversion/hooks/useEpicConversionReports';
 import { useEpicCarePlanImports } from '../epicConversion/hooks/useEpicCarePlanImports';
+import { useEpicEmarImports } from '../epicConversion/hooks/useEpicEmarImports';
 import { useEpicSsdbServiceImports } from '../epicConversion/hooks/useEpicSsdbServiceImports';
 import { ConversionDiscrepanciesPanel } from '../epicConversion/components/ConversionDiscrepanciesPanel';
 import {
@@ -32,6 +33,7 @@ import {
   computeTemplatedCarePlanCountByServiceWeek,
   computeTemplatedCarePlanPercentByServiceDay,
   computeTemplatedCarePlanPercentByServiceWeek,
+  indexPatientSsdbServiceDetails,
 } from '../epicConversion/serviceData/linkServiceDayCarePlans';
 import {
   aggregateSsdbServiceDayRows,
@@ -77,6 +79,7 @@ import { ToolbarMultiSelect, matchesMultiFilter } from '../epicConversion/compon
 import { downloadEnrolmentImportXlsx } from '../epicConversion/export/buildEnrolmentXlsx';
 import { downloadSsdbServiceImportXlsx } from '../epicConversion/export/buildSsdbServiceImportXlsx';
 import { downloadCarePlanImportXlsx } from '../epicConversion/export/buildCarePlanImportXlsx';
+import { downloadEmarImportXlsx } from '../epicConversion/export/buildEmarImportXlsx';
 import { downloadEpicReportImportXlsx } from '../epicConversion/export/buildEpicReportXlsx';
 import {
   downloadEpicConversionTableXlsx,
@@ -410,7 +413,39 @@ function formatPathwayWithCarePath(r: EpicConversionRecord): string {
 }
 
 type EpicTableSortKey = 'pathway' | 'ic_lead' | 'hosp_dc' | 'los' | 'latest_srv';
+type ImportTableSortKey = 'documentType' | 'importedAt' | 'uploadedBy';
 type SortDirection = 'asc' | 'desc';
+
+function compareConsolidatedImportRows(
+  a: {
+    documentType: string;
+    importedAt: string;
+    uploadedByLabel: string;
+  },
+  b: {
+    documentType: string;
+    importedAt: string;
+    uploadedByLabel: string;
+  },
+  key: ImportTableSortKey,
+  direction: SortDirection
+): number {
+  let cmp = 0;
+  switch (key) {
+    case 'documentType':
+      cmp = a.documentType.localeCompare(b.documentType, undefined, { sensitivity: 'base' });
+      break;
+    case 'importedAt':
+      cmp = new Date(a.importedAt).getTime() - new Date(b.importedAt).getTime();
+      break;
+    case 'uploadedBy':
+      cmp = a.uploadedByLabel.localeCompare(b.uploadedByLabel, undefined, {
+        sensitivity: 'base',
+      });
+      break;
+  }
+  return direction === 'asc' ? cmp : -cmp;
+}
 
 function compareSortStrings(
   a: string | null | undefined,
@@ -505,6 +540,7 @@ export function EpicConversionPage() {
     insertRows,
     setCompletion,
     setCarePlanCompletion,
+    setEmarCompletion,
     clearCarePlanCompletionForRecords,
     changeFromDischargePending,
     changeFromEpisodeConversionPending,
@@ -542,6 +578,15 @@ export function EpicConversionPage() {
     fetchRowsForImport: fetchCarePlanRowsForImport,
   } = useEpicCarePlanImports();
   const {
+    imports: emarImports,
+    emarRows,
+    error: emarError,
+    refresh: refreshEmarImports,
+    uploadEmar,
+    deleteEmarImport,
+    fetchRowsForImport: fetchEmarRowsForImport,
+  } = useEpicEmarImports();
+  const {
     imports: serviceDataImports,
     error: serviceDataError,
     refresh: refreshServiceDataImports,
@@ -549,6 +594,9 @@ export function EpicConversionPage() {
     deleteServiceImport,
     fetchRowsForImport: fetchServiceDataRowsForImport,
     fetchDailyCountsForDateRange: fetchServiceDataDailyCountsForDateRange,
+    fetchSsdbServiceDateBounds,
+    fetchVisitCountsByEnrollIdInDateRange,
+    fetchPatientSsdbServicesInDateRange,
     fetchMonthHasServices: fetchServiceDataMonthHasServices,
   } = useEpicSsdbServiceImports();
   const epicMapsContext = useEpicConversionMapsContextOptional();
@@ -574,6 +622,7 @@ export function EpicConversionPage() {
     enrolment: null,
     serviceData: null,
     carePlan: null,
+    emar: null,
     epicReport: null,
   });
   const [importDialogError, setImportDialogError] = useState<string | null>(null);
@@ -584,6 +633,7 @@ export function EpicConversionPage() {
   const [uploadSuccessMessage, setUploadSuccessMessage] = useState<string | null>(null);
   const [epicReportError, setEpicReportError] = useState<string | null>(null);
   const [carePlanUploadError, setCarePlanUploadError] = useState<string | null>(null);
+  const [emarUploadError, setEmarUploadError] = useState<string | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -610,6 +660,10 @@ export function EpicConversionPage() {
     key: EpicTableSortKey;
     direction: SortDirection;
   } | null>(null);
+  const [importTableSort, setImportTableSort] = useState<{
+    key: ImportTableSortKey;
+    direction: SortDirection;
+  }>({ key: 'importedAt', direction: 'desc' });
 
   const toggleStackExpand = (target: 'main' | 'split') => {
     setStackExpandMode((prev) => (prev === target ? 'none' : target));
@@ -728,6 +782,7 @@ export function EpicConversionPage() {
     enrolmentKey?: { filename: string; importedAt: string; count: number };
     serviceDataId?: string;
     carePlanId?: string;
+    emarId?: string;
     reportId?: string;
   };
 
@@ -777,6 +832,19 @@ export function EpicConversionPage() {
       });
     }
 
+    for (const imp of emarImports) {
+      rows.push({
+        key: `emar-${imp.id}`,
+        kind: 'emar',
+        documentType: IMPORT_DOCUMENT_TYPE_LABELS.emar,
+        importedAt: imp.imported_at,
+        importedBy: imp.imported_by,
+        filename: imp.source_filename,
+        rowCount: imp.row_count,
+        emarId: imp.id,
+      });
+    }
+
     for (const imp of reportImports) {
       rows.push({
         key: `epicReport-${imp.id}`,
@@ -790,10 +858,8 @@ export function EpicConversionPage() {
       });
     }
 
-    return rows.sort(
-      (a, b) => new Date(b.importedAt).getTime() - new Date(a.importedAt).getTime()
-    );
-  }, [imports, serviceDataImports, carePlanImports, reportImports]);
+    return rows;
+  }, [imports, serviceDataImports, carePlanImports, emarImports, reportImports]);
 
   const [uploaderByUserId, setUploaderByUserId] = useState<Map<string, BatchUploader>>(
     () => new Map()
@@ -871,7 +937,11 @@ export function EpicConversionPage() {
 
   useEffect(() => {
     const uploaderIds = [
-      ...new Set(carePlanImports.map((imp) => imp.imported_by).filter((id): id is string => !!id)),
+      ...new Set(
+        [...carePlanImports, ...emarImports]
+          .map((imp) => imp.imported_by)
+          .filter((id): id is string => !!id)
+      ),
     ];
     if (!uploaderIds.length) {
       setCarePlanUploaderByUserId(new Map());
@@ -898,7 +968,7 @@ export function EpicConversionPage() {
     return () => {
       cancelled = true;
     };
-  }, [carePlanImports]);
+  }, [carePlanImports, emarImports]);
 
   // Stable tab list derived from all records (so tabs don't disappear when
   // filters reduce a strategy's rows to zero).
@@ -963,6 +1033,7 @@ export function EpicConversionPage() {
         refreshRecords(),
         refreshReports(),
         refreshCarePlanImports(),
+        refreshEmarImports(),
         refreshServiceDataImports(),
         epicMapsContext?.refresh() ?? Promise.resolve(),
       ]);
@@ -975,6 +1046,7 @@ export function EpicConversionPage() {
     refreshRecords,
     refreshReports,
     refreshCarePlanImports,
+    refreshEmarImports,
     refreshServiceDataImports,
     epicMapsContext,
     loadUnifiedReconciliationDetails,
@@ -1006,6 +1078,11 @@ export function EpicConversionPage() {
   const carePlanImportFilenames = useMemo(
     () => new Map(carePlanImports.map((imp) => [imp.id, imp.source_filename])),
     [carePlanImports]
+  );
+
+  const emarImportFilenames = useMemo(
+    () => new Map(emarImports.map((imp) => [imp.id, imp.source_filename])),
+    [emarImports]
   );
 
   const fetchServiceDataDailyCountsWithCarePlanLink = useCallback(
@@ -1076,6 +1153,10 @@ export function EpicConversionPage() {
         patientCountsByDate: counts.patientCountsByDate,
         weekServiceCountsByWeekStart: counts.weekServiceCountsByWeekStart,
         weekPatientCountsByWeekStart: counts.weekPatientCountsByWeekStart,
+        hasChangedServiceByDate: counts.hasChangedServiceByDate,
+        hasChangedServiceByWeekStart: counts.hasChangedServiceByWeekStart,
+        cancelledServiceCountByDate: counts.cancelledServiceCountByDate,
+        cancelledServiceCountByWeekStart: counts.cancelledServiceCountByWeekStart,
         templatedCarePlanPercentByDate,
         templatedCarePlanPercentByWeekStart,
         templatedCarePlanCountByDate,
@@ -1096,12 +1177,41 @@ export function EpicConversionPage() {
     ]
   );
 
+  const fetchPatientServicesInDateRange = useCallback(
+    async (enrollId: string, startDate: string, endDate: string) => {
+      const { rows, error } = await fetchPatientSsdbServicesInDateRange(
+        enrollId,
+        startDate,
+        endDate
+      );
+      const services = computeServiceDayServices(
+        rows,
+        records,
+        carePlanRows,
+        carePlanImports.length > 0
+      );
+      return {
+        services,
+        serviceDetailsByCalendarKey: indexPatientSsdbServiceDetails(rows),
+        error,
+      };
+    },
+    [
+      fetchPatientSsdbServicesInDateRange,
+      records,
+      carePlanRows,
+      carePlanImports.length,
+    ]
+  );
+
   const { patientLinks: carePlanPatientLinks, summary: carePlanSummary } =
     useCarePlanConversionData(
       records,
       carePlanRows,
       carePlanImportFilenames,
-      validatedRecordIds
+      validatedRecordIds,
+      emarRows,
+      emarImportFilenames
     );
 
   const epicValidationByRecordId = useMemo(
@@ -1184,6 +1294,15 @@ export function EpicConversionPage() {
   const toggleEpicTableSort = (key: EpicTableSortKey) => {
     setEpicTableSort((prev) => {
       if (prev?.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+
+  const toggleImportTableSort = (key: ImportTableSortKey) => {
+    setImportTableSort((prev) => {
+      if (prev.key === key) {
         return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
       }
       return { key, direction: 'asc' };
@@ -1398,12 +1517,21 @@ export function EpicConversionPage() {
         parts.push(
           `Inserted ${result.inserted} net-new record${result.inserted === 1 ? '' : 's'} (${breakdown}).`
         );
-      } else if (result.skippedDuplicates > 0) {
+      }
+      if (result.updated > 0) {
         parts.push(
-          `No net-new records added. Skipped ${result.skippedDuplicates} duplicate${result.skippedDuplicates === 1 ? '' : 's'}.`
+          `Updated ${result.updated} existing record${result.updated === 1 ? '' : 's'} with changes from this file.`
         );
-      } else {
-        parts.push('Upload completed with no rows to insert.');
+      }
+      if (result.inserted === 0 && result.updated === 0) {
+        if (result.unchanged > 0 || result.skippedDuplicates > 0) {
+          const unchangedCount = result.unchanged || result.skippedDuplicates;
+          parts.push(
+            `No changes detected. ${unchangedCount} existing record${unchangedCount === 1 ? '' : 's'} already match this file.`
+          );
+        } else {
+          parts.push('Upload completed with no rows to process.');
+        }
       }
       if (result.autoDischarged > 0) {
         parts.push(
@@ -1433,10 +1561,52 @@ export function EpicConversionPage() {
     const uploader =
       kind === 'enrolment' || kind === 'serviceData'
         ? uploaderByUserId.get(importedBy)
-        : kind === 'carePlan'
+        : kind === 'carePlan' || kind === 'emar'
           ? carePlanUploaderByUserId.get(importedBy)
           : reportUploaderByUserId.get(importedBy);
     return uploaderLabel(uploader);
+  };
+
+  const sortedConsolidatedImports = useMemo(() => {
+    const withLabels = consolidatedImports.map((imp) => ({
+      imp,
+      documentType: imp.documentType,
+      importedAt: imp.importedAt,
+      uploadedByLabel: resolveImportUploaderName(imp.kind, imp.importedBy),
+    }));
+    return [...withLabels]
+      .sort((a, b) =>
+        compareConsolidatedImportRows(a, b, importTableSort.key, importTableSort.direction)
+      )
+      .map((row) => row.imp);
+  }, [
+    consolidatedImports,
+    importTableSort,
+    uploaderByUserId,
+    carePlanUploaderByUserId,
+    reportUploaderByUserId,
+  ]);
+
+  const renderImportSortableHeader = (
+    label: string,
+    key: ImportTableSortKey,
+    className: string
+  ) => {
+    const active = importTableSort.key === key;
+    const direction = active ? importTableSort.direction : null;
+    return (
+      <th className={className}>
+        <button
+          type="button"
+          className={`hc-table-sort${direction ? ` hc-table-sort--${direction}` : ''}`}
+          aria-sort={direction ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+          onClick={() => toggleImportTableSort(key)}
+        >
+          {label}
+          <span className="hc-table-sort-indicator" aria-hidden />
+        </button>
+      </th>
+    );
   };
 
   const openImportDialog = () => {
@@ -1446,6 +1616,7 @@ export function EpicConversionPage() {
       enrolment: null,
       serviceData: null,
       carePlan: null,
+      emar: null,
       epicReport: null,
     });
     setImportDialogError(null);
@@ -1459,6 +1630,7 @@ export function EpicConversionPage() {
       enrolment: null,
       serviceData: null,
       carePlan: null,
+      emar: null,
       epicReport: null,
     });
     setImportDialogError(null);
@@ -1471,8 +1643,8 @@ export function EpicConversionPage() {
   };
 
   const handleImportDialogSubmit = async () => {
-    const { enrolment, serviceData, carePlan, epicReport } = importDialogFiles;
-    if (!enrolment && !serviceData && !carePlan && !epicReport) return;
+    const { enrolment, serviceData, carePlan, emar, epicReport } = importDialogFiles;
+    if (!enrolment && !serviceData && !carePlan && !emar && !epicReport) return;
 
     setImportDialogPhase('processing');
     setImportDialogError(null);
@@ -1518,7 +1690,9 @@ export function EpicConversionPage() {
           records,
           result.carePlanRows,
           validatedRecordIds,
-          importFilenames
+          importFilenames,
+          emarRows,
+          emarImportFilenames
         );
         const recordIdsToRecheck = findCompletedRecordIdsNeedingCarePlanRecheck(refreshedLinks);
         if (recordIdsToRecheck.length > 0) {
@@ -1531,8 +1705,44 @@ export function EpicConversionPage() {
         }
 
         if (!errors.some((message) => message.startsWith(IMPORT_DOCUMENT_TYPE_LABELS.carePlan))) {
+          if (result.rowCount > 0) {
+            const dupNote =
+              result.skippedDuplicates > 0
+                ? `, ${result.skippedDuplicates} duplicate${result.skippedDuplicates === 1 ? '' : 's'} skipped`
+                : '';
+            successParts.push(
+              `${IMPORT_DOCUMENT_TYPE_LABELS.carePlan} (${result.rowCount} row${result.rowCount === 1 ? '' : 's'}${dupNote})`
+            );
+          } else if (result.skippedDuplicates > 0) {
+            successParts.push(
+              `${IMPORT_DOCUMENT_TYPE_LABELS.carePlan} (no new rows; ${result.skippedDuplicates} duplicate${result.skippedDuplicates === 1 ? '' : 's'} skipped)`
+            );
+          }
+        }
+      }
+    }
+
+    if (emar) {
+      setEmarUploadError(null);
+      const result = await uploadEmar(emar, user?.id ?? null);
+      if (result.error) {
+        errors.push(`${IMPORT_DOCUMENT_TYPE_LABELS.emar}: ${result.error}`);
+      } else {
+        if (result.rowCount > 0) {
+          const dupNote =
+            result.skippedDuplicates > 0
+              ? `, ${result.skippedDuplicates} duplicate${result.skippedDuplicates === 1 ? '' : 's'} skipped`
+              : '';
+          const linkedNote =
+            result.linkedCount > 0
+              ? `, ${result.linkedCount} linked to enrolment`
+              : '';
           successParts.push(
-            `${IMPORT_DOCUMENT_TYPE_LABELS.carePlan} (${result.rowCount} row${result.rowCount === 1 ? '' : 's'})`
+            `${IMPORT_DOCUMENT_TYPE_LABELS.emar} (${result.rowCount} row${result.rowCount === 1 ? '' : 's'}${linkedNote}${dupNote})`
+          );
+        } else if (result.skippedDuplicates > 0) {
+          successParts.push(
+            `${IMPORT_DOCUMENT_TYPE_LABELS.emar} (no new rows; ${result.skippedDuplicates} duplicate${result.skippedDuplicates === 1 ? '' : 's'} skipped)`
           );
         }
       }
@@ -1580,6 +1790,12 @@ export function EpicConversionPage() {
     if (!window.confirm(`Delete care plan import "${filename}"? This cannot be undone.`)) return;
     const { error: err } = await deleteCarePlanImport(importId);
     if (err) setCarePlanUploadError(err);
+  };
+
+  const handleDeleteEmarImport = async (importId: string, filename: string) => {
+    if (!window.confirm(`Delete eMAR import "${filename}"? This cannot be undone.`)) return;
+    const { error: err } = await deleteEmarImport(importId);
+    if (err) setEmarUploadError(err);
   };
 
   const handleDeleteServiceDataImport = async (importId: string, filename: string) => {
@@ -1648,6 +1864,15 @@ export function EpicConversionPage() {
     setUpdatingId(recordId);
     setStatusError(null);
     const { error: err } = await setCarePlanCompletion(recordId, completedBy);
+    if (err) setStatusError(err);
+    setUpdatingId(null);
+  };
+
+  const handleToggleEmarCompleted = async (recordId: string, completed: boolean) => {
+    const completedBy = completed ? emailToUsername(user?.email ?? profile?.email) : null;
+    setUpdatingId(recordId);
+    setStatusError(null);
+    const { error: err } = await setEmarCompletion(recordId, completedBy);
     if (err) setStatusError(err);
     setUpdatingId(null);
   };
@@ -1798,6 +2023,15 @@ export function EpicConversionPage() {
       return;
     }
     downloadCarePlanImportXlsx(rows ?? [], filename);
+  };
+
+  const handleDownloadEmarImport = async (importId: string, filename: string) => {
+    const { rows, error: fetchError } = await fetchEmarRowsForImport(importId);
+    if (fetchError) {
+      setEmarUploadError(fetchError);
+      return;
+    }
+    downloadEmarImportXlsx(rows ?? [], filename);
   };
 
   const handleDownloadServiceDataImport = async (importId: string, filename: string) => {
@@ -2102,6 +2336,8 @@ export function EpicConversionPage() {
           {uploadSuccessMessage && <p className="hc-info">{uploadSuccessMessage}</p>}
           {carePlanUploadError && <p className="hc-form-error">{carePlanUploadError}</p>}
           {carePlanError && <p className="hc-form-error">{carePlanError}</p>}
+          {emarUploadError && <p className="hc-form-error">{emarUploadError}</p>}
+          {emarError && <p className="hc-form-error">{emarError}</p>}
           {epicReportError && <p className="hc-form-error">{epicReportError}</p>}
           {reportError && <p className="hc-form-error">{reportError}</p>}
           <div className="hc-import-column-body">
@@ -2110,23 +2346,31 @@ export function EpicConversionPage() {
               <table className="hc-table hc-table--grid hc-table--import">
                 <thead>
                   <tr>
-                    <th className="hc-col-import-type">Document Type</th>
-                    <th className="hc-col-import-date">Uploaded Date</th>
-                    <th className="hc-col-import-by">Uploaded By</th>
+                    {renderImportSortableHeader(
+                      'Document Type',
+                      'documentType',
+                      'hc-col-import-type'
+                    )}
+                    {renderImportSortableHeader(
+                      'Uploaded Date',
+                      'importedAt',
+                      'hc-col-import-date'
+                    )}
+                    {renderImportSortableHeader('Uploaded By', 'uploadedBy', 'hc-col-import-by')}
                     <th className="hc-col-import-filename">File Name</th>
                     <th className="hc-col-import-rows"># Rows</th>
                     <th className="hc-col-import-actions">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {consolidatedImports.length === 0 ? (
+                  {sortedConsolidatedImports.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="hc-import-empty-cell">
                         <span className="hc-muted">No data uploaded yet.</span>
                       </td>
                     </tr>
                   ) : (
-                    consolidatedImports.map((imp) => {
+                    sortedConsolidatedImports.map((imp) => {
                       const uploaderName = resolveImportUploaderName(imp.kind, imp.importedBy);
                       return (
                         <tr key={imp.key}>
@@ -2160,6 +2404,8 @@ export function EpicConversionPage() {
                                     );
                                   } else if (imp.kind === 'carePlan' && imp.carePlanId) {
                                     void handleDownloadCarePlanImport(imp.carePlanId, imp.filename);
+                                  } else if (imp.kind === 'emar' && imp.emarId) {
+                                    void handleDownloadEmarImport(imp.emarId, imp.filename);
                                   } else if (imp.kind === 'epicReport' && imp.reportId) {
                                     void handleDownloadReportImport(imp.reportId, imp.filename);
                                   }
@@ -2185,6 +2431,8 @@ export function EpicConversionPage() {
                                     );
                                   } else if (imp.kind === 'carePlan' && imp.carePlanId) {
                                     void handleDeleteCarePlanImport(imp.carePlanId, imp.filename);
+                                  } else if (imp.kind === 'emar' && imp.emarId) {
+                                    void handleDeleteEmarImport(imp.emarId, imp.filename);
                                   } else if (imp.kind === 'epicReport' && imp.reportId) {
                                     void handleDeleteReportImport(imp.reportId, imp.filename);
                                   }
@@ -2209,10 +2457,20 @@ export function EpicConversionPage() {
     {!loading && isCarePlanTab && (
       <CarePlanConversionPanel
         hasCarePlanImports={carePlanImports.length > 0}
+        hasServiceDataImports={serviceDataImports.length > 0}
+        serviceDataRefreshKey={serviceDataImports
+          .map((imp) => `${imp.id}:${imp.imported_at}:${imp.row_count}`)
+          .join('|')}
         patientLinks={carePlanPatientLinks}
+        fetchSsdbServiceDateBounds={fetchSsdbServiceDateBounds}
+        fetchVisitCountsByEnrollIdInDateRange={fetchVisitCountsByEnrollIdInDateRange}
+        fetchPatientServicesInDateRange={fetchPatientServicesInDateRange}
         updatingRecordId={updatingId}
         onToggleCarePlanCompleted={(recordId, completed) =>
           void handleToggleCarePlanCompleted(recordId, completed)
+        }
+        onToggleEmarCompleted={(recordId, completed) =>
+          void handleToggleEmarCompleted(recordId, completed)
         }
       />
     )}
