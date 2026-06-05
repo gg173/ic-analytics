@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
-import { useResizableTableColumns } from './useResizableTableColumns';
+import { useResizableTableColumns } from '../../hooks/useResizableTableColumns';
 import {
   buildCarePlanPatientLinks,
   carePlanDateRangesEqual,

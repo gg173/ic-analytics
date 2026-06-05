@@ -7396,11 +7396,13 @@ select.hc-cell-input {
    ============================================================ */
 
 .hc-billing-page-content {
-  padding: 1.25rem 1.5rem;
+  margin-top: 0;
+  padding: 1.25rem 1.5rem 1.25rem;
   gap: 1.25rem;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  background: #fff;
 }
 
 /* ── Dashboard ─────────────────────────────────────────────── */
@@ -7597,6 +7599,7 @@ select.hc-cell-input {
 /* ── Pay Cycles tab ────────────────────────────────────────── */
 
 .hc-billing-pay-cycles-layout {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
@@ -7604,9 +7607,280 @@ select.hc-cell-input {
   min-height: 0;
 }
 
+.hc-billing-week-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.hc-billing-week-modal {
+  width: 95vw;
+  height: 95vh;
+  max-width: 95vw;
+  max-height: 95vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow:
+    0 32px 64px -16px rgba(15, 23, 42, 0.45),
+    0 48px 100px -24px rgba(15, 23, 42, 0.38),
+    0 12px 24px -8px rgba(15, 23, 42, 0.2),
+    0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.hc-billing-week-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-shrink: 0;
+  padding: 0.9rem 1.1rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.hc-billing-week-modal-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.hc-billing-week-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.75rem 1rem 1rem;
+}
+
+.hc-billing-week-modal-body .hc-billing-workspace.hc-panel {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.hc-billing-week-modal-body .hc-billing-workspace-header-title .hc-panel-title {
+  display: none;
+}
+
 /* Reuse hc-service-data-calendar layout but make it fill available space */
 .hc-billing-pay-cycles-layout .hc-service-data-calendar {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+}
+
+.hc-billing-pay-cycle-calendar {
+  --hc-service-data-calendar-nav-control-height: 1.5rem;
+  flex-direction: row;
+  align-items: stretch;
+}
+
+.hc-billing-pay-cycle-calendar-aside {
+  flex: 0 0 30%;
+  width: 30%;
+  min-width: 0;
+  min-height: 0;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  border-right: 1px solid #e2e8f0;
+  background: #fff;
+  overflow: hidden;
+}
+
+.hc-billing-pay-cycle-calendar-aside-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: calc(var(--hc-service-data-calendar-nav-control-height) + 0.625rem);
+  padding: 0.3125rem;
+  border-right: none;
+  text-align: center;
+  text-transform: none;
+}
+
+.hc-billing-pay-cycle-calendar-aside-table-scroll {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.hc-billing-pay-cycle-calendar-aside-table-wrap {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.hc-billing-pay-cycle-calendar-aside-table-wrap::-webkit-scrollbar {
+  display: none;
+}
+
+.hc-billing-pay-cycle-calendar-aside-scroll-hint {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  padding: 0.2rem 0 0.3rem;
+  background: linear-gradient(to bottom, transparent, #fff 60%);
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.hc-billing-pay-cycle-calendar-aside-scroll-hint svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.hc-billing-pay-cycle-weeks-table {
+  width: 100%;
+}
+
+.hc-billing-pay-cycle-weeks-table th,
+.hc-billing-pay-cycle-weeks-table td {
+  font-size: 0.6875rem;
+  letter-spacing: normal;
+  color: #64748b;
+  padding: 0.3rem 0.4rem;
+  white-space: nowrap;
+}
+
+.hc-billing-pay-cycle-weeks-table td {
+  font-weight: 400;
+}
+
+.hc-billing-pay-cycle-weeks-table th {
+  font-weight: 600;
+  text-align: center;
+  background: #f1f5f9;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.hc-billing-pay-cycle-weeks-table .hc-billing-pay-cycle-week-col-label {
+  width: auto;
+}
+
+.hc-billing-pay-cycle-weeks-table thead .hc-billing-pay-cycle-week-col-label {
+  text-align: center;
+}
+
+.hc-billing-pay-cycle-weeks-table tbody .hc-billing-pay-cycle-week-col-label {
+  text-align: left;
+}
+
+.hc-billing-pay-cycle-weeks-table .hc-billing-pay-cycle-week-col-stat {
+  width: 3.25rem;
+  text-align: center;
+}
+
+.hc-billing-pay-cycle-week-col-icon {
+  display: block;
+  margin: 0 auto;
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+.hc-billing-pay-cycle-weeks-table .hc-billing-pay-cycle-week-col-status {
+  width: 5.5rem;
+  text-align: center;
+}
+
+.hc-billing-pay-cycle-week-status {
+  font-size: 0.5625rem;
+  font-weight: 400;
+  padding: 0.1rem 0.35rem;
+  white-space: nowrap;
+}
+
+.hc-billing-pay-cycle-week-row {
+  cursor: pointer;
+}
+
+.hc-billing-pay-cycle-week-row:hover td {
+  background: #eff6ff;
+}
+
+.hc-billing-pay-cycle-week-row--selected td,
+.hc-billing-pay-cycle-week-row--selected:hover td {
+  background: #eff6ff;
+}
+
+.hc-billing-pay-cycle-calendar-grid {
+  grid-template-columns: repeat(7, 1fr);
+}
+
+.hc-billing-pay-cycle-calendar-grid .hc-service-data-calendar-dow {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  padding: 0.3rem 0.4rem;
+  box-sizing: border-box;
+  line-height: 1.2;
+}
+
+/* Reset the default 8-column border rules inherited via .hc-service-data-calendar-grid */
+.hc-billing-pay-cycle-calendar-grid > :nth-child(8n) {
+  border-right: 1px solid #e2e8f0;
+}
+
+.hc-billing-pay-cycle-calendar-grid > :nth-last-child(-n + 8) {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.hc-billing-pay-cycle-calendar-grid > :nth-child(7n) {
+  border-right: none;
+}
+
+.hc-billing-pay-cycle-calendar-grid > :nth-last-child(-n + 7) {
+  border-bottom: none;
+}
+
+.hc-billing-pay-cycle-calendar-main {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.hc-billing-pay-cycles-layout .hc-service-data-calendar-nav {
+  --hc-service-data-calendar-nav-control-height: 1.5rem;
+  justify-content: center;
+  background: #f1f5f9;
+}
+
+.hc-billing-pay-cycles-layout .hc-service-data-calendar-dow {
+  background: #f1f5f9;
+}
+
+.hc-billing-pay-cycles-layout .hc-service-data-calendar-nav-center {
+  gap: 0.5rem;
+}
+
+.hc-billing-pay-cycles-layout .hc-service-data-calendar-month {
+  min-width: 6rem;
+  font-size: 0.9375rem;
+}
+
+.hc-billing-pay-cycles-layout .hc-service-data-calendar-nav-btn svg {
+  width: 0.875rem;
+  height: 0.875rem;
 }
 
 /* Gutter cell states for billing pay periods */
@@ -7616,7 +7890,7 @@ select.hc-cell-input {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding-bottom: 0.75rem;
+  padding: 0.75rem 0 0.75rem;
   border-bottom: 1px solid #e2e8f0;
   margin-bottom: 0.25rem;
   flex-shrink: 0;
@@ -7692,6 +7966,10 @@ select.hc-cell-input {
   background: #f0f5ff !important;
 }
 
+.hc-billing-calendar-day--hovered-week:not(.hc-billing-calendar-day--selected-week) {
+  background: #eff6ff !important;
+}
+
 /* Status + deadline inside gutter */
 .hc-billing-gutter-status {
   display: flex;
@@ -7723,17 +8001,27 @@ select.hc-cell-input {
 
 .hc-billing-day-count {
   display: block;
-  font-size: 0.72rem;
-  font-weight: 700;
-  padding: 0.1rem 0.4rem;
+  font-size: 0.62rem;
+  font-weight: 600;
+  padding: 0.1rem 0.35rem;
   border-radius: 3px;
   text-align: center;
-  line-height: 1.4;
+  line-height: 1.35;
 }
 
-.hc-billing-day-count--clean {
+.hc-billing-day-count--total {
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.hc-billing-day-count--billable {
   background: #dcfce7;
   color: #166534;
+}
+
+.hc-billing-day-count--not-billable {
+  background: #fee2e2;
+  color: #991b1b;
 }
 
 .hc-billing-day-count--dq {
@@ -7893,14 +8181,9 @@ select.hc-cell-input {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  padding: 1rem 1.25rem;
+  gap: 0;
+  padding: 0;
   overflow-y: auto;
-}
-
-/* When no panel, still pad */
-.hc-billing-workspace > .hc-billing-workspace-inner {
-  padding: 1rem 1.25rem;
 }
 
 /* ── Review modal ──────────────────────────────────────────── */
@@ -8133,6 +8416,34 @@ select.hc-cell-input {
 
 /* ── Visit table: extra compact ────────────────────────────── */
 
+.hc-billing-visit-table-wrap .hc-table-wrap--resizable-columns {
+  overflow-x: hidden;
+  border-radius: 0;
+}
+
+.hc-billing-visit-table.hc-table--resizable {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 0;
+}
+
+.hc-billing-visit-table.hc-table--resizable col {
+  max-width: none;
+}
+
+.hc-billing-visit-table.hc-table--resizable thead th {
+  position: relative;
+}
+
+.hc-billing-visit-table.hc-table--resizable td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hc-billing-visit-table.hc-table--resizable td:last-child {
+  overflow: visible;
+}
+
 .hc-billing-visit-table th,
 .hc-billing-visit-table td {
   padding: 0.25rem 0.45rem;
@@ -8186,8 +8497,27 @@ select.hc-cell-input {
 .hc-billing-workspace-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 1rem;
+  padding: 0.35rem 0.5rem;
+  background: #f8fafc;
+}
+
+.hc-billing-workspace-header-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.hc-billing-workspace-header-meta {
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.hc-billing-workspace-header-attention {
+  color: #b91c1c;
 }
 
 /* Review panel reuses hc-service-data-selection-panel styles */
@@ -8303,13 +8633,18 @@ select.hc-cell-input {
 .hc-billing-visit-table-wrap {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0;
 }
 
 .hc-billing-visit-filters {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
+  gap: 0;
+  background: #f8fafc;
+}
+
+.hc-billing-filter-chip + .hc-billing-filter-chip {
+  margin-left: -1px;
 }
 
 .hc-billing-filter-chip {
@@ -8318,7 +8653,7 @@ select.hc-cell-input {
   gap: 0.35rem;
   padding: 0.3rem 0.7rem;
   border: 1px solid #cbd5e1;
-  border-radius: 999px;
+  border-radius: 0;
   background: #f8fafc;
   font-size: 0.8125rem;
   font-weight: 500;
@@ -8329,11 +8664,15 @@ select.hc-cell-input {
 }
 
 .hc-billing-filter-chip:hover {
+  position: relative;
+  z-index: 1;
   border-color: #93c5fd;
   color: #1d4ed8;
 }
 
 .hc-billing-filter-chip--active {
+  position: relative;
+  z-index: 1;
   border-color: #1d4ed8;
   background: #eff6ff;
   color: #1d4ed8;

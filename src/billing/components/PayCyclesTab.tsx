@@ -1,13 +1,14 @@
-import { useState, useMemo, useEffect, useCallback, type CSSProperties } from 'react';
-import type { PayPeriod, BillingStatus } from '../types';
-import { daysUntilDeadline } from '../types';
+import { useState, useMemo, useEffect, useCallback, useRef, type CSSProperties, type MouseEvent } from 'react';
+import { createPortal } from 'react-dom';
+import type { PayPeriod, PayPeriodStatus, BillingStatus } from '../types';
+import { getWeekStart } from '../types';
 import { WeekWorkspace } from './WeekWorkspace';
 import type { Profile } from '../../homecare/types';
 import { supabase } from '../../lib/supabase';
 
 // ── Calendar helpers ──────────────────────────────────────────────────────────
 
-const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
+const WEEKDAY_LABELS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const;
 
 function toIsoDate(year: number, month: number, day: number): string {
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -52,17 +53,88 @@ function formatWeekDateRange(week: Date[]): string {
   return `${fmt(week[0])} – ${fmt(week[6])}`;
 }
 
-// ── Pay period status colours ─────────────────────────────────────────────────
+function formatMonthDay(d: Date): string {
+  const month = d.toLocaleDateString('en-US', { month: 'short' });
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${month} ${day}`;
+}
 
-function WeekStatusBadge({ status }: { status: PayPeriod['status'] | 'not_started' }) {
-  if (status === 'finalized')   return <span className="hc-badge hc-badge--ready_for_spo" style={{ fontSize: '0.65rem' }}>Finalized</span>;
-  if (status === 'in_progress') return <span className="hc-badge hc-badge--in_review" style={{ fontSize: '0.65rem' }}>In Progress</span>;
-  return <span className="hc-badge hc-badge--draft" style={{ fontSize: '0.65rem' }}>Not started</span>;
+function formatWeekOfLabel(weekStartIso: string): string {
+  const start = new Date(`${weekStartIso}T12:00:00`);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 6);
+
+  return `${formatMonthDay(start)} - ${formatMonthDay(end)}, ${end.getFullYear()}`;
+}
+
+function buildPayYearWeeks(yearStart: Date): string[] {
+  const yearEnd = new Date(yearStart.getFullYear() + 1, yearStart.getMonth(), yearStart.getDate() - 1);
+  const weeks: string[] = [];
+  const cursor = getWeekStart(yearStart);
+  const end = getWeekStart(yearEnd);
+
+  while (cursor <= end) {
+    weeks.push(dateToIso(cursor));
+    cursor.setDate(cursor.getDate() + 7);
+  }
+
+  return weeks;
+}
+
+const PAY_YEAR_WEEKS = buildPayYearWeeks(new Date(2026, 3, 1));
+
+type WeekVisitCounts = { billable: number; notBillable: number; total: number };
+
+function weekStartForDate(isoDate: string): string {
+  return dateToIso(getWeekStart(new Date(`${isoDate}T12:00:00`)));
+}
+
+async function fetchWeekCountsForPayYear(weekStarts: string[]): Promise<Map<string, WeekVisitCounts>> {
+  const map = new Map<string, WeekVisitCounts>();
+  for (const weekStart of weekStarts) {
+    map.set(weekStart, { billable: 0, notBillable: 0, total: 0 });
+  }
+  if (!weekStarts.length) return map;
+
+  const rangeEnd = new Date(`${weekStarts[weekStarts.length - 1]}T12:00:00`);
+  rangeEnd.setDate(rangeEnd.getDate() + 6);
+  const rangeEndIso = dateToIso(rangeEnd);
+
+  const { data } = await supabase
+    .from('service_visits')
+    .select('service_date, billing_status')
+    .gte('service_date', weekStarts[0])
+    .lte('service_date', rangeEndIso)
+    .not('pay_period_id', 'is', null);
+
+  for (const row of data ?? []) {
+    const weekStart = weekStartForDate(row.service_date as string);
+    const counts = map.get(weekStart);
+    if (!counts) continue;
+
+    const status = row.billing_status as BillingStatus;
+    counts.total++;
+    if (status === 'billable') counts.billable++;
+    else if (status === 'not_billable') counts.notBillable++;
+  }
+
+  return map;
+}
+
+function WeekStatusBadge({ status }: { status: PayPeriodStatus | 'not_started' }) {
+  if (status === 'finalized') {
+    return <span className="hc-badge hc-badge--ready_for_spo hc-billing-pay-cycle-week-status">Finalized</span>;
+  }
+  if (status === 'in_progress') {
+    return <span className="hc-badge hc-badge--in_review hc-billing-pay-cycle-week-status">In Progress</span>;
+  }
+  return <span className="hc-badge hc-badge--draft hc-billing-pay-cycle-week-status">Not Started</span>;
 }
 
 // ── Day cell visit counts (loaded from DB) ────────────────────────────────────
 
-type DayCountsByDate = Map<string, { total: number; dq: number; inv: number; clean: number }>;
+type DayCount = { total: number; billable: number; notBillable: number; dq: number; inv: number };
+type DayCountsByDate = Map<string, DayCount>;
 
 async function fetchDayCountsForRange(
   startIso: string,
@@ -79,11 +151,12 @@ async function fetchDayCountsForRange(
   for (const row of data ?? []) {
     const date = row.service_date as string;
     const status = row.billing_status as BillingStatus;
-    const existing = map.get(date) ?? { total: 0, dq: 0, inv: 0, clean: 0 };
+    const existing = map.get(date) ?? { total: 0, billable: 0, notBillable: 0, dq: 0, inv: 0 };
     existing.total++;
-    if (status === 'data_quality') existing.dq++;
+    if (status === 'billable') existing.billable++;
+    else if (status === 'not_billable') existing.notBillable++;
+    else if (status === 'data_quality') existing.dq++;
     else if (status === 'needs_investigation') existing.inv++;
-    else if (status === 'clean' || status === 'billable') existing.clean++;
     map.set(date, existing);
   }
   return map;
@@ -96,6 +169,45 @@ function ChevronLeft() {
 }
 function ChevronRight() {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path d="M9 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+function ChevronDown() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+function BillableIcon() {
+  return (
+    <svg
+      className="hc-billing-pay-cycle-week-col-icon"
+      xmlns="http://www.w3.org/2000/svg"
+      width="1em"
+      height="1em"
+      viewBox="0 0 1024 1024"
+      aria-hidden
+    >
+      <path d="M0 0h1024v1024H0z" fill="none" />
+      <path
+        fill="currentColor"
+        d="M512 64C264.6 64 64 264.6 64 512s200.6 448 448 448s448-200.6 448-448S759.4 64 512 64m0 820c-205.4 0-372-166.6-372-372s166.6-372 372-372s372 166.6 372 372s-166.6 372-372 372m47.7-395.2l-25.4-5.9V348.6c38 5.2 61.5 29 65.5 58.2c.5 4 3.9 6.9 7.9 6.9h44.9c4.7 0 8.4-4.1 8-8.8c-6.1-62.3-57.4-102.3-125.9-109.2V263c0-4.4-3.6-8-8-8h-28.1c-4.4 0-8 3.6-8 8v33c-70.8 6.9-126.2 46-126.2 119c0 67.6 49.8 100.2 102.1 112.7l24.7 6.3v142.7c-44.2-5.9-69-29.5-74.1-61.3c-.6-3.8-4-6.6-7.9-6.6H363c-4.7 0-8.4 4-8 8.7c4.5 55 46.2 105.6 135.2 112.1V761c0 4.4 3.6 8 8 8h28.4c4.4 0 8-3.6 8-8.1l-.2-31.7c78.3-6.9 134.3-48.8 134.3-124c-.1-69.4-44.2-100.4-109-116.4m-68.6-16.2c-5.6-1.6-10.3-3.1-15-5c-33.8-12.2-49.5-31.9-49.5-57.3c0-36.3 27.5-57 64.5-61.7zM534.3 677V543.3c3.1.9 5.9 1.6 8.8 2.2c47.3 14.4 63.2 34.4 63.2 65.1c0 39.1-29.4 62.6-72 66.4"
+      />
+    </svg>
+  );
+}
+function UnbillableIcon() {
+  return (
+    <svg
+      className="hc-billing-pay-cycle-week-col-icon"
+      xmlns="http://www.w3.org/2000/svg"
+      width="1em"
+      height="1em"
+      viewBox="0 0 24 24"
+      aria-hidden
+    >
+      <path d="M0 0h24v24H0z" fill="none" />
+      <path
+        fill="currentColor"
+        d="M3 4.27L4.28 3L21 19.72L19.73 21l-3.67-3.67c-.62.67-1.52 1.22-2.56 1.49V21h-3v-2.18C8.47 18.31 7 16.79 7 15h2c0 1.08 1.37 2 3 2c1.13 0 2.14-.44 2.65-1.08l-2.97-2.97C9.58 12.42 7 11.75 7 9c0-.23 0-.45.07-.66zm7.5.91V3h3v2.18C15.53 5.69 17 7.21 17 9h-2c0-1.08-1.37-2-3-2c-.37 0-.72.05-1.05.13L9.4 5.58z"
+      />
+    </svg>
+  );
 }
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -140,8 +252,24 @@ export function PayCyclesTab({
     setVisibleMonth(d.getMonth());
   }, [initialDate]);
   const [selectedWeekStart, setSelectedWeekStart] = useState<string | null>(null);
+  const [hoveredWeekStart, setHoveredWeekStart] = useState<string | null>(null);
   const [dayCounts, setDayCounts] = useState<DayCountsByDate>(() => new Map());
   const [countsLoading, setCountsLoading] = useState(false);
+  const [weekCounts, setWeekCounts] = useState<Map<string, WeekVisitCounts>>(() => new Map());
+  const [weekCountsLoading, setWeekCountsLoading] = useState(false);
+  const asideTableRef = useRef<HTMLDivElement>(null);
+  const [showAsideScrollHint, setShowAsideScrollHint] = useState(false);
+
+  const updateAsideScrollHint = useCallback(() => {
+    const el = asideTableRef.current;
+    if (!el) {
+      setShowAsideScrollHint(false);
+      return;
+    }
+    const hasOverflow = el.scrollHeight > el.clientHeight + 1;
+    const isAtBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+    setShowAsideScrollHint(hasOverflow && !isAtBottom);
+  }, []);
 
   const weeks = useMemo(() => buildCalendarWeeks(visibleYear, visibleMonth), [visibleYear, visibleMonth]);
   const todayIso = useMemo(() => dateToIso(today), [today]);
@@ -167,6 +295,30 @@ export function PayCyclesTab({
 
   useEffect(() => { void loadCounts(); }, [loadCounts]);
 
+  const loadWeekCounts = useCallback(async () => {
+    setWeekCountsLoading(true);
+    const counts = await fetchWeekCountsForPayYear(PAY_YEAR_WEEKS);
+    setWeekCounts(counts);
+    setWeekCountsLoading(false);
+  }, []);
+
+  useEffect(() => { void loadWeekCounts(); }, [loadWeekCounts, payPeriods]);
+
+  useEffect(() => {
+    updateAsideScrollHint();
+    const el = asideTableRef.current;
+    if (!el) return undefined;
+
+    const observer = new ResizeObserver(() => updateAsideScrollHint());
+    observer.observe(el);
+    window.addEventListener('resize', updateAsideScrollHint);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateAsideScrollHint);
+    };
+  }, [updateAsideScrollHint, weekCountsLoading, loading]);
+
   const prevMonth = useMemo(() => shiftMonth(visibleYear, visibleMonth, -1), [visibleYear, visibleMonth]);
   const nextMonth = useMemo(() => shiftMonth(visibleYear, visibleMonth, 1), [visibleYear, visibleMonth]);
 
@@ -174,62 +326,119 @@ export function PayCyclesTab({
   const goToNext = () => { setVisibleYear(nextMonth.year); setVisibleMonth(nextMonth.month); };
 
   const handleWeekClick = (weekStartIso: string) => {
-    setSelectedWeekStart((prev) => (prev === weekStartIso ? null : weekStartIso));
+    const weekMonday = new Date(`${weekStartIso}T12:00:00`);
+    setVisibleYear(weekMonday.getFullYear());
+    setVisibleMonth(weekMonday.getMonth());
+    setSelectedWeekStart(weekStartIso);
   };
+
+  const closeWeekModal = useCallback(() => {
+    setSelectedWeekStart(null);
+  }, []);
+
+  const handleWeekModalBackdrop = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) closeWeekModal();
+  };
+
+  useEffect(() => {
+    if (!selectedWeekStart) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeWeekModal();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedWeekStart, closeWeekModal]);
 
   if (loading) return <p className="hc-muted" style={{ padding: '1.5rem' }}>Loading pay periods…</p>;
   if (error)   return <p className="hc-form-error" style={{ padding: '1.5rem' }}>{error}</p>;
 
   const monthLabel = formatMonthYear(visibleYear, visibleMonth);
-
-  // ── Drill-in: show week workspace fullscreen ──────────────────────────────
-  if (selectedWeekStart) {
-    return (
-      <div className="hc-billing-pay-cycles-layout">
-        {/* Breadcrumb */}
-        <div className="hc-billing-week-breadcrumb">
-          <button
-            type="button"
-            className="hc-billing-week-breadcrumb-back"
-            onClick={() => setSelectedWeekStart(null)}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-              <path d="M19 12H5M12 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            Pay Cycles
-          </button>
-          <span className="hc-billing-week-breadcrumb-sep">/</span>
-          <span className="hc-billing-week-breadcrumb-current">
-            {formatWeekDateRange(
-              Array.from({ length: 7 }, (_, i) => {
-                const d = new Date(`${selectedWeekStart}T12:00:00`);
-                d.setDate(d.getDate() + i);
-                return d;
-              })
-            )}
-          </span>
-        </div>
-
-        <WeekWorkspace
-          weekStart={selectedWeekStart}
-          payPeriod={selectedPeriod}
-          canEdit={canEdit}
-          profile={profile}
-          onRefresh={async () => { await onRefresh(); await loadCounts(); }}
-        />
-      </div>
-    );
-  }
+  const selectedWeekLabel = selectedWeekStart
+    ? formatWeekDateRange(
+        Array.from({ length: 7 }, (_, i) => {
+          const d = new Date(`${selectedWeekStart}T12:00:00`);
+          d.setDate(d.getDate() + i);
+          return d;
+        })
+      )
+    : '';
 
   return (
     <div className="hc-billing-pay-cycles-layout">
 
       {/* ── Calendar ──────────────────────────────────────── */}
-      <div className="hc-service-data-calendar" aria-label="Pay cycle calendar">
+      <div className="hc-service-data-calendar hc-billing-pay-cycle-calendar" aria-label="Pay cycle calendar">
+        <div className="hc-billing-pay-cycle-calendar-aside">
+          <div
+            className="hc-service-data-calendar-dow hc-billing-pay-cycle-calendar-aside-header"
+            role="columnheader"
+          >
+            Pay Weeks
+          </div>
+          <div className="hc-billing-pay-cycle-calendar-aside-table-scroll">
+            <div
+              ref={asideTableRef}
+              className="hc-billing-pay-cycle-calendar-aside-table-wrap"
+              onScroll={updateAsideScrollHint}
+            >
+            <table className="hc-table hc-table--grid hc-billing-pay-cycle-weeks-table">
+              <thead>
+                <tr>
+                  <th className="hc-billing-pay-cycle-week-col-label" scope="col">Week</th>
+                  <th className="hc-billing-pay-cycle-week-col-stat" scope="col" aria-label="Billable">
+                    <BillableIcon />
+                  </th>
+                  <th className="hc-billing-pay-cycle-week-col-stat" scope="col" aria-label="Unbillable">
+                    <UnbillableIcon />
+                  </th>
+                  <th className="hc-billing-pay-cycle-week-col-stat" scope="col">Total</th>
+                  <th className="hc-billing-pay-cycle-week-col-status" scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {PAY_YEAR_WEEKS.map((weekStartIso) => {
+                  const isSelected = selectedWeekStart === weekStartIso;
+                  const period = periodByWeek.get(weekStartIso);
+                  const status = period?.status ?? 'not_started';
+                  const counts = weekCounts.get(weekStartIso);
+                  const countValue = (value: number | undefined) =>
+                    weekCountsLoading ? '…' : String(value ?? 0);
 
+                  return (
+                    <tr
+                      key={weekStartIso}
+                      className={[
+                        'hc-billing-pay-cycle-week-row',
+                        isSelected ? 'hc-billing-pay-cycle-week-row--selected' : '',
+                      ].filter(Boolean).join(' ')}
+                      onClick={() => handleWeekClick(weekStartIso)}
+                      onMouseEnter={() => setHoveredWeekStart(weekStartIso)}
+                      onMouseLeave={() => setHoveredWeekStart(null)}
+                    >
+                      <td className="hc-billing-pay-cycle-week-col-label">{formatWeekOfLabel(weekStartIso)}</td>
+                      <td className="hc-billing-pay-cycle-week-col-stat">{countValue(counts?.billable)}</td>
+                      <td className="hc-billing-pay-cycle-week-col-stat">{countValue(counts?.notBillable)}</td>
+                      <td className="hc-billing-pay-cycle-week-col-stat">{countValue(counts?.total)}</td>
+                      <td className="hc-billing-pay-cycle-week-col-status">
+                        <WeekStatusBadge status={status} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            </div>
+            {showAsideScrollHint && (
+              <div className="hc-billing-pay-cycle-calendar-aside-scroll-hint" aria-hidden>
+                <ChevronDown />
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="hc-billing-pay-cycle-calendar-main">
         {/* Nav bar */}
         <div className="hc-service-data-calendar-nav">
-          <div className="hc-service-data-calendar-nav-filters hc-service-data-calendar-nav-filters--start" aria-hidden />
           <div className="hc-service-data-calendar-nav-center">
             <button type="button" className="hc-service-data-calendar-nav-btn" onClick={goToPrev} aria-label={`Previous month, ${formatMonthYear(prevMonth.year, prevMonth.month)}`}>
               <ChevronLeft />
@@ -239,119 +448,25 @@ export function PayCyclesTab({
               <ChevronRight />
             </button>
           </div>
-          <div className="hc-service-data-calendar-nav-filters hc-service-data-calendar-nav-filters--end">
-            <p className="hc-muted" style={{ fontSize: '0.8rem', margin: 0 }}>
-              Click a week row to open its workspace
-            </p>
-          </div>
         </div>
 
         {/* Grid */}
         <div
-          className="hc-service-data-calendar-grid"
+          className="hc-service-data-calendar-grid hc-billing-pay-cycle-calendar-grid"
           role="grid"
           aria-label={monthLabel}
           style={{ '--hc-service-data-calendar-week-rows': weeks.length } as CSSProperties}
         >
-          {/* Column headers */}
-          <div className="hc-service-data-calendar-dow hc-service-data-calendar-dow--gutter" role="columnheader">
-            <div className="hc-service-data-calendar-day-header">
-              <div className="hc-service-data-calendar-day-header-top">
-                <div className="hc-service-data-calendar-day-summary-badge">
-                  <div className="hc-service-data-calendar-day-summary-main">
-                    <div className="hc-service-data-calendar-day-num">
-                      <span className="hc-service-data-calendar-week-label-heading">Pay Week</span>
-                      <span className="hc-service-data-calendar-week-label-dates">Status</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
           {WEEKDAY_LABELS.map((label) => (
             <div key={label} className="hc-service-data-calendar-dow" role="columnheader">{label}</div>
           ))}
 
-          {/* Rows */}
           {weeks.flatMap((week, weekIndex) => {
             const weekStartIso = dateToIso(week[0]);
-            const weekEndIso   = dateToIso(week[6]);
-            const period       = periodByWeek.get(weekStartIso);
-            const status       = period?.status ?? 'not_started';
             const isSelected   = selectedWeekStart === weekStartIso;
-            const deadline     = period?.submission_deadline;
-            const daysLeft     = deadline ? daysUntilDeadline(deadline) : null;
+            const isHovered    = hoveredWeekStart === weekStartIso;
 
-            // Aggregate counts for the week
-            let weekTotal = 0, weekDq = 0, weekInv = 0;
-            for (const d of week) {
-              const iso = dateToIso(d);
-              const c = dayCounts.get(iso);
-              if (c) { weekTotal += c.total; weekDq += c.dq; weekInv += c.inv; }
-            }
-
-            const gutterClass = [
-              'hc-service-data-calendar-cell',
-              'hc-service-data-calendar-cell--gutter',
-              'hc-billing-calendar-gutter',
-              `hc-billing-calendar-gutter--${status}`,
-              isSelected ? 'hc-billing-calendar-gutter--selected' : '',
-            ].filter(Boolean).join(' ');
-
-            return [
-              // ── Week gutter cell ────────────────────────────────────
-              <div
-                key={`gutter-${weekIndex}`}
-                className={gutterClass}
-                role="gridcell"
-                aria-label={`Week of ${formatWeekDateRange(week)}, ${status}`}
-                onClick={() => handleWeekClick(weekStartIso)}
-                style={{ cursor: 'pointer' }}
-              >
-                <div className="hc-service-data-calendar-day-header">
-                  <div className="hc-service-data-calendar-day-header-top">
-                    <div className="hc-service-data-calendar-day-summary-badge hc-service-data-calendar-week-summary-badge">
-                      <div className="hc-service-data-calendar-day-summary-main">
-                        <div className="hc-service-data-calendar-day-num">
-                          <span className="hc-service-data-calendar-week-label-heading">{weekStartIso === dateToIso(week[0]) ? formatWeekDateRange(week) : ''}</span>
-                          <span className="hc-service-data-calendar-week-label-dates">{weekEndIso}</span>
-                        </div>
-                        {weekTotal > 0 && (
-                          <>
-                            <span className="hc-service-data-calendar-day-summary-sep" aria-hidden />
-                            <span className="hc-service-data-calendar-visit-count">
-                              {countsLoading ? '…' : `${weekTotal} visit${weekTotal !== 1 ? 's' : ''}`}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Status + deadline */}
-                <div className="hc-service-data-calendar-day-stats">
-                  <div className="hc-service-data-calendar-day-body">
-                    <div className="hc-billing-gutter-status">
-                      <WeekStatusBadge status={status} />
-                      {status === 'in_progress' && daysLeft !== null && (
-                        <span className={`hc-billing-deadline-chip${daysLeft <= 2 ? ' hc-billing-deadline-chip--urgent' : ''}`}>
-                          {daysLeft <= 0 ? 'Overdue' : `${daysLeft}d left`}
-                        </span>
-                      )}
-                    </div>
-                    {status !== 'not_started' && (weekDq > 0 || weekInv > 0) && (
-                      <div className="hc-billing-gutter-flags">
-                        {weekDq  > 0 && <span className="hc-billing-tile-count hc-billing-tile-count--dq">{weekDq} DQ</span>}
-                        {weekInv > 0 && <span className="hc-billing-tile-count hc-billing-tile-count--inv">{weekInv} inv.</span>}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>,
-
-              // ── Day cells ────────────────────────────────────────────
-              ...week.map((date, dayIndex) => {
+            return week.map((date, dayIndex) => {
                 const isoDate       = dateToIso(date);
                 const isToday       = isoDate === todayIso;
                 const isOutside     = date.getMonth() !== visibleMonth;
@@ -363,6 +478,7 @@ export function PayCyclesTab({
                   isToday   ? 'hc-service-data-calendar-cell--today'         : '',
                   isOutside ? 'hc-service-data-calendar-cell--outside-month' : '',
                   isSelected ? 'hc-billing-calendar-day--selected-week'      : '',
+                  isHovered  ? 'hc-billing-calendar-day--hovered-week'       : '',
                 ].filter(Boolean).join(' ');
 
                 return (
@@ -391,9 +507,17 @@ export function PayCyclesTab({
                     {hasCounts && !countsLoading && (
                       <div className="hc-service-data-calendar-day-stats">
                         <div className="hc-billing-calendar-day-counts">
-                          {counts!.clean > 0 && (
-                            <span className="hc-billing-day-count hc-billing-day-count--clean">
-                              {counts!.clean}
+                          <span className="hc-billing-day-count hc-billing-day-count--total">
+                            {counts!.total}
+                          </span>
+                          {counts!.billable > 0 && (
+                            <span className="hc-billing-day-count hc-billing-day-count--billable">
+                              {counts!.billable}
+                            </span>
+                          )}
+                          {counts!.notBillable > 0 && (
+                            <span className="hc-billing-day-count hc-billing-day-count--not-billable">
+                              {counts!.notBillable}
                             </span>
                           )}
                           {counts!.dq > 0 && (
@@ -416,11 +540,48 @@ export function PayCyclesTab({
                     )}
                   </div>
                 );
-              }),
-            ];
+              });
           })}
         </div>
+        </div>
       </div>
+
+      {selectedWeekStart && createPortal(
+        <div
+          className="hc-billing-week-modal-backdrop"
+          role="dialog"
+          aria-modal
+          aria-label={`Week workspace: ${selectedWeekLabel}`}
+          onClick={handleWeekModalBackdrop}
+        >
+          <div
+            className="hc-billing-week-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="hc-billing-week-modal-header">
+              <h2 className="hc-billing-week-modal-title">{selectedWeekLabel}</h2>
+              <button
+                type="button"
+                className="hc-btn hc-btn-ghost hc-modal-close"
+                aria-label="Close week workspace"
+                onClick={closeWeekModal}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="hc-billing-week-modal-body">
+              <WeekWorkspace
+                weekStart={selectedWeekStart}
+                payPeriod={selectedPeriod}
+                canEdit={canEdit}
+                profile={profile}
+                onRefresh={async () => { await onRefresh(); await loadCounts(); await loadWeekCounts(); }}
+              />
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
     </div>
   );

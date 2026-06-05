@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import type {
   PayPeriod, BillingVisit, BillingStatus, InvestigationType,
 } from '../types';
@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { finalizePayPeriod } from '../hooks/usePayPeriods';
 import { ReviewModal } from './ReviewModal';
 import type { Profile } from '../../homecare/types';
+import { useResizableTableColumns } from '../../hooks/useResizableTableColumns';
 
 interface WeekWorkspaceProps {
   weekStart: string;
@@ -192,13 +193,13 @@ export function WeekWorkspace({ weekStart, payPeriod, canEdit, profile, onRefres
   const workspaceContent = (
     <div className="hc-billing-workspace-inner">
       <div className="hc-billing-workspace-header">
-        <div>
+        <div className="hc-billing-workspace-header-title">
           <h3 className="hc-panel-title" style={{ margin: 0 }}>{weekLabel}</h3>
           {!isNotStarted && (
-            <p className="hc-muted" style={{ marginTop: '0.15rem', fontSize: '0.78rem' }}>
+            <p className="hc-muted hc-billing-workspace-header-meta">
               {total} visit{total !== 1 ? 's' : ''}
               {pendingCount > 0 && isInProgress && (
-                <span style={{ color: '#b91c1c', marginLeft: '0.5rem' }}>
+                <span className="hc-billing-workspace-header-attention">
                   · {pendingCount} need{pendingCount === 1 ? 's' : ''} attention
                 </span>
               )}
@@ -270,6 +271,47 @@ export function WeekWorkspace({ weekStart, payPeriod, canEdit, profile, onRefres
 
 // ── Visit table ────────────────────────────────────────────────────────────────
 
+const VISIT_TABLE_COLUMNS = [
+  { id: 'date',           label: 'Date' },
+  { id: 'mrn',            label: 'MRN' },
+  { id: 'employee',       label: 'Employee' },
+  { id: 'title',          label: 'Title' },
+  { id: 'category',       label: 'Category' },
+  { id: 'visit_status',   label: 'Visit status' },
+  { id: 'duration',       label: 'Dur.' },
+  { id: 'cancel_code',    label: 'Cancel code' },
+  { id: 'billing_status', label: 'Billing status' },
+] as const;
+
+const VISIT_TABLE_COLUMN_IDS = VISIT_TABLE_COLUMNS.map((column) => column.id);
+
+function VisitTableHeaderCell({
+  columnId,
+  onStartResize,
+  children,
+}: {
+  columnId: string;
+  onStartResize: (columnId: string, clientX: number) => void;
+  children: ReactNode;
+}) {
+  return (
+    <th>
+      {children}
+      <span
+        className="hc-table-col-resize-handle"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={`Resize ${columnId} column`}
+        onMouseDown={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onStartResize(columnId, event.clientX);
+        }}
+      />
+    </th>
+  );
+}
+
 interface VisitTableProps {
   visits: BillingVisit[];
   flagMap: Map<string, VisitFlags>;
@@ -288,6 +330,13 @@ function VisitTable({
   visits, flagMap, loading, error, filter, counts, total,
   onFilterChange, selectedVisitId, onSelectVisit,
 }: VisitTableProps) {
+  const tableRef = useRef<HTMLTableElement>(null);
+  const { getColumnStyle, startResize } = useResizableTableColumns(
+    tableRef,
+    VISIT_TABLE_COLUMN_IDS,
+    !loading && visits.length > 0
+  );
+
   return (
     <div className="hc-billing-visit-table-wrap">
       {/* Filter chips */}
@@ -323,19 +372,27 @@ function VisitTable({
       )}
 
       {!loading && visits.length > 0 && (
-        <div className="hc-table-wrap hc-table-wrap--fill">
-          <table className="hc-table hc-table--grid hc-table--compact hc-billing-visit-table">
+        <div className="hc-table-wrap hc-table-wrap--fill hc-table-wrap--resizable-columns">
+          <table
+            ref={tableRef}
+            className="hc-table hc-table--grid hc-table--compact hc-billing-visit-table hc-table--resizable"
+          >
+            <colgroup>
+              {VISIT_TABLE_COLUMN_IDS.map((columnId) => (
+                <col key={columnId} style={getColumnStyle(columnId)} />
+              ))}
+            </colgroup>
             <thead>
               <tr>
-                <th>Date</th>
-                <th>MRN</th>
-                <th>Employee</th>
-                <th>Title</th>
-                <th>Category</th>
-                <th>Visit status</th>
-                <th>Dur.</th>
-                <th>Cancel code</th>
-                <th>Billing status</th>
+                {VISIT_TABLE_COLUMNS.map(({ id, label }) => (
+                  <VisitTableHeaderCell
+                    key={id}
+                    columnId={id}
+                    onStartResize={startResize}
+                  >
+                    {label}
+                  </VisitTableHeaderCell>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -355,18 +412,16 @@ function VisitTable({
                     onClick={() => onSelectVisit(v)}
                     style={{ cursor: 'pointer' }}
                   >
-                    <td style={{ whiteSpace: 'nowrap' }}>{v.service_date ?? '—'}</td>
+                    <td>{v.service_date ?? '—'}</td>
                     <td>{v.mrn ?? '—'}</td>
                     <td>{[v.employee_first, v.employee_last].filter(Boolean).join(' ') || '—'}</td>
                     <td>{v.employee_title ?? '—'}</td>
                     <td>{v.visit_category ? VISIT_CATEGORY_LABELS[v.visit_category] : '—'}</td>
                     <td>{v.status_of_visit ?? '—'}</td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
+                    <td>
                       {v.duration_minutes != null ? `${v.duration_minutes}m` : '—'}
                     </td>
-                    <td style={{ maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {v.visit_cancel_reason ?? '—'}
-                    </td>
+                    <td>{v.visit_cancel_reason ?? '—'}</td>
                     <td>
                       <StatusCell visit={v} flags={flags} />
                     </td>
