@@ -24,7 +24,6 @@ type VisitFilter =
   | 'all'
   | 'data_quality'
   | 'needs_investigation'
-  | 'clean'
   | 'billable'
   | 'not_billable'
   | 'pending';
@@ -33,7 +32,6 @@ const STATUS_FILTER_LABELS: { key: VisitFilter; label: string }[] = [
   { key: 'all',                 label: 'All' },
   { key: 'needs_investigation', label: 'Investigations' },
   { key: 'data_quality',        label: 'Data Quality' },
-  { key: 'clean',               label: 'Clean' },
   { key: 'billable',            label: 'Billable' },
   { key: 'not_billable',        label: 'Not Billable' },
   { key: 'pending',             label: 'Pending' },
@@ -113,10 +111,10 @@ function usePayPeriodData(payPeriodId: string | undefined) {
 
 function StatusCell({ visit, flags }: { visit: BillingVisit; flags: VisitFlags | undefined }) {
   const status = visit.billing_status;
+  const isBillable = status === 'billable' || status === 'clean';
 
   const badgeCls =
-    status === 'clean'               ? 'hc-badge--validated'    :
-    status === 'billable'            ? 'hc-badge--ready_for_spo':
+    isBillable                       ? 'hc-badge--ready_for_spo':
     status === 'not_billable'        ? 'hc-badge--pushed'       :
     status === 'data_quality'        ? 'hc-badge--in_review'    :
     status === 'needs_investigation' ? 'hc-badge--in_review'    :
@@ -131,19 +129,17 @@ function StatusCell({ visit, flags }: { visit: BillingVisit; flags: VisitFlags |
   }
 
   const label =
-    status === 'clean'               ? 'Clean'            :
-    status === 'billable'            ? 'Billable'         :
+    isBillable                       ? 'Billable'         :
     status === 'not_billable'        ? 'Not Billable'     :
     status === 'data_quality'        ? 'Data Quality'     :
     status === 'needs_investigation' ? 'Investigation'    :
     'Pending';
 
+  const badgeText = reasons.length > 0 ? `${label} · ${reasons.join(' · ')}` : label;
+
   return (
     <div className="hc-billing-status-cell">
-      <span className={`hc-badge hc-billing-status-badge ${badgeCls}`}>{label}</span>
-      {reasons.map((r) => (
-        <span key={r} className="hc-billing-status-reason">{r}</span>
-      ))}
+      <span className={`hc-badge hc-billing-status-badge ${badgeCls}`}>{badgeText}</span>
     </div>
   );
 }
@@ -171,7 +167,9 @@ export function WeekWorkspace({ weekStart, payPeriod, canEdit, profile, onRefres
 
   const filteredVisits = visitFilter === 'all'
     ? visits
-    : visits.filter((v) => v.billing_status === visitFilter);
+    : visitFilter === 'billable'
+      ? visits.filter((v) => v.billing_status === 'billable' || v.billing_status === 'clean')
+      : visits.filter((v) => v.billing_status === visitFilter);
 
   const canFinalize =
     isInProgress && visits.length > 0 &&
@@ -342,7 +340,11 @@ function VisitTable({
       {/* Filter chips */}
       <div className="hc-billing-visit-filters">
         {STATUS_FILTER_LABELS.map(({ key, label }) => {
-          const count    = key === 'all' ? total : (counts[key as BillingStatus] ?? 0);
+          const count = key === 'all'
+            ? total
+            : key === 'billable'
+              ? (counts.billable ?? 0) + (counts.clean ?? 0)
+              : (counts[key as BillingStatus] ?? 0);
           const isActive = filter === key;
           return (
             <button

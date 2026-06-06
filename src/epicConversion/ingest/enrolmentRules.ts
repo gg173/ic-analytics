@@ -35,6 +35,7 @@ const STRATEGY_MATRIX: Partial<
     '> 30 days ago': 'Yellow',
   },
   '45-60': {
+    'No visit recorded': 'Yellow',
     'Future service scheduled': 'Green',
     '0-7 days ago': 'Yellow',
     '7-14 days ago': 'Yellow',

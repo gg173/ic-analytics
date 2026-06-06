@@ -1,8 +1,10 @@
 import type { EpicConversionRecord } from '../types';
 import {
+  buildHandledMrnSet,
   DISCHARGE_STRATEGY,
   EPISODE_CONVERSION_STRATEGY,
   ICL_REASSESSMENT_STRATEGY,
+  isIclDecisionRequiredRecord,
   isRecordPending,
   recordBelongsToStrategyTab,
 } from './recordStrategyTabs';
@@ -70,18 +72,20 @@ export function computeProgressMetrics(
   let iclDecidedConvert = 0;
   let iclDecidedDischarge = 0;
 
+  const handledMrns = buildHandledMrnSet(records);
+
   for (const r of records) {
-    if (recordBelongsToStrategyTab(r, EPISODE_CONVERSION_STRATEGY)) {
+    if (recordBelongsToStrategyTab(r, EPISODE_CONVERSION_STRATEGY, handledMrns)) {
       episodeTotal += 1;
       if (!r.completed_at) episodePending += 1;
       else if (validatedRecordIds?.has(r.id)) episodeValidatedComplete += 1;
     }
-    if (recordBelongsToStrategyTab(r, DISCHARGE_STRATEGY)) {
+    if (recordBelongsToStrategyTab(r, DISCHARGE_STRATEGY, handledMrns)) {
       dischargeTotal += 1;
       if (r.status !== 'discharged') dischargePending += 1;
     }
     if (r.episode_conversion_strategy === ICL_REASSESSMENT_STRATEGY) {
-      if (!r.icl_decision) iclDecisionRequired += 1;
+      if (isIclDecisionRequiredRecord(r, handledMrns)) iclDecisionRequired += 1;
       else if (r.icl_decision === 'convert') iclDecidedConvert += 1;
       else if (r.icl_decision === 'discharge') iclDecidedDischarge += 1;
     }
@@ -91,7 +95,7 @@ export function computeProgressMetrics(
   const iclPending = iclDecisionRequired;
   const iclComplete = iclDecidedConvert + iclDecidedDischarge;
 
-  const pending = records.filter(isRecordPending).length;
+  const pending = records.filter((r) => isRecordPending(r, handledMrns)).length;
   const totalRecords = records.length;
   const accounted = totalRecords - pending;
 

@@ -1,3 +1,4 @@
+import { normalizeMrnForMatch } from '../reconciliation/reconcileReportRows';
 import type { EpicConversionRecord } from '../types';
 
 export const NO_STRATEGY_LABEL = 'No conversion strategy';
@@ -18,13 +19,47 @@ export const EPISODE_CONVERSION_STRATEGY = 'Manually Convert Episode';
 export const ICL_REASSESSMENT_STRATEGY = 'TBD: Conversion at the Discretion of ICL';
 export const DISCHARGE_STRATEGY = 'Do Not Convert: Overdue Discharge';
 
-export function recordBelongsToStrategyTab(r: EpicConversionRecord, tab: string): boolean {
+/** MRNs already converted or discharged on any enrolment record. */
+export function buildHandledMrnSet(
+  records: readonly EpicConversionRecord[]
+): ReadonlySet<string> {
+  const handled = new Set<string>();
+  for (const r of records) {
+    if (r.completed_at != null || r.status === 'discharged') {
+      const key = normalizeMrnForMatch(r.mrn);
+      if (key) handled.add(key);
+    }
+  }
+  return handled;
+}
+
+export function isIclDecisionRequiredRecord(
+  r: EpicConversionRecord,
+  handledMrns?: ReadonlySet<string>
+): boolean {
+  if (r.episode_conversion_strategy !== ICL_REASSESSMENT_STRATEGY) return false;
+  if (r.icl_decision) return false;
+  if (handledMrns) {
+    const key = normalizeMrnForMatch(r.mrn);
+    if (key && handledMrns.has(key)) return false;
+  }
+  return true;
+}
+
+export function recordBelongsToStrategyTab(
+  r: EpicConversionRecord,
+  tab: string,
+  handledMrns?: ReadonlySet<string>
+): boolean {
   const strategy = r.episode_conversion_strategy ?? NO_STRATEGY_LABEL;
-  if (tab === NO_STRATEGY_LABEL) return strategy === NO_STRATEGY_LABEL;
+  if (tab === NO_STRATEGY_LABEL) {
+    return strategy === NO_STRATEGY_LABEL && r.completed_at == null;
+  }
   if (tab === ICL_REASSESSMENT_STRATEGY) {
-    return strategy === ICL_REASSESSMENT_STRATEGY && !r.icl_decision;
+    return isIclDecisionRequiredRecord(r, handledMrns);
   }
   if (tab === EPISODE_CONVERSION_STRATEGY) {
+    if (r.completed_at != null) return true;
     return (
       strategy === EPISODE_CONVERSION_STRATEGY ||
       (strategy === ICL_REASSESSMENT_STRATEGY && r.icl_decision === 'convert')
@@ -40,18 +75,25 @@ export function recordBelongsToStrategyTab(r: EpicConversionRecord, tab: string)
 }
 
 /** Tab badge counts match each strategy tab's primary (main) split panel. */
-export function recordBelongsToStrategyTabBadge(r: EpicConversionRecord, tab: string): boolean {
-  if (!recordBelongsToStrategyTab(r, tab)) return false;
+export function recordBelongsToStrategyTabBadge(
+  r: EpicConversionRecord,
+  tab: string,
+  handledMrns?: ReadonlySet<string>
+): boolean {
+  if (!recordBelongsToStrategyTab(r, tab, handledMrns)) return false;
   if (tab === EPISODE_CONVERSION_STRATEGY) return !r.completed_at;
   if (tab === DISCHARGE_STRATEGY) return r.status !== 'discharged';
   return true;
 }
 
-export function isRecordPending(r: EpicConversionRecord): boolean {
+export function isRecordPending(
+  r: EpicConversionRecord,
+  handledMrns?: ReadonlySet<string>
+): boolean {
   return (
-    recordBelongsToStrategyTabBadge(r, EPISODE_CONVERSION_STRATEGY) ||
-    recordBelongsToStrategyTabBadge(r, ICL_REASSESSMENT_STRATEGY) ||
-    recordBelongsToStrategyTabBadge(r, DISCHARGE_STRATEGY)
+    recordBelongsToStrategyTabBadge(r, EPISODE_CONVERSION_STRATEGY, handledMrns) ||
+    recordBelongsToStrategyTabBadge(r, ICL_REASSESSMENT_STRATEGY, handledMrns) ||
+    recordBelongsToStrategyTabBadge(r, DISCHARGE_STRATEGY, handledMrns)
   );
 }
 

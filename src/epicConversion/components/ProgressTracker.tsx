@@ -229,6 +229,7 @@ interface ProgressTrackerProps {
   carePlanUploaderByUserId: Map<string, BatchUploader>;
   onNavigateToStrategy?: (strategy: string) => void;
   onNavigateToCarePlan?: () => void;
+  showIclReassessment?: boolean;
 }
 
 function resolveUploaderName(
@@ -255,6 +256,7 @@ export function ProgressTracker({
   carePlanUploaderByUserId,
   onNavigateToStrategy,
   onNavigateToCarePlan,
+  showIclReassessment = true,
 }: ProgressTrackerProps) {
   const hasGoLive = metrics.daysUntilGoLive != null;
   const daysUntilGoLive = metrics.daysUntilGoLive;
@@ -302,22 +304,24 @@ export function ProgressTracker({
           statUnit="care-plan"
           onClick={onNavigateToCarePlan}
         />
-        <BucketCard
-          title="ICL Reassessment Required"
-          total={metrics.iclReassessment.total}
-          complete={metrics.iclReassessment.complete}
-          percentComplete={metrics.iclReassessment.percentComplete}
-          statUnit="icl-reassessment"
-          iclStats={{
-            decidedConvert: metrics.iclReassessment.decidedConvert,
-            decidedDischarge: metrics.iclReassessment.decidedDischarge,
-          }}
-          onClick={
-            onNavigateToStrategy
-              ? () => onNavigateToStrategy(ICL_REASSESSMENT_STRATEGY)
-              : undefined
-          }
-        />
+        {showIclReassessment && (
+          <BucketCard
+            title="ICL Reassessment Required"
+            total={metrics.iclReassessment.total}
+            complete={metrics.iclReassessment.complete}
+            percentComplete={metrics.iclReassessment.percentComplete}
+            statUnit="icl-reassessment"
+            iclStats={{
+              decidedConvert: metrics.iclReassessment.decidedConvert,
+              decidedDischarge: metrics.iclReassessment.decidedDischarge,
+            }}
+            onClick={
+              onNavigateToStrategy
+                ? () => onNavigateToStrategy(ICL_REASSESSMENT_STRATEGY)
+                : undefined
+            }
+          />
+        )}
         <BucketCard
           title="Discharge from Program"
           total={metrics.programDischarge.total}

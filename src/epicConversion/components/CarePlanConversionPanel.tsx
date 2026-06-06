@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode }
 import { useResizableTableColumns } from '../../hooks/useResizableTableColumns';
 import {
   buildCarePlanPatientLinks,
+  buildDefaultCarePlanVisitDateRange,
   carePlanDateRangesEqual,
   eligibilityReasonLabel,
   getLatestCarePlanRow,
@@ -979,6 +980,110 @@ function WithCarePlanStatGroup({
   );
 }
 
+function countPendingCarePlanLinks(
+  patientLinks: CarePlanPatientLink[],
+  visitDateRange: CarePlanDateRange,
+  visitCountsByEnrollId: ReadonlyMap<string, number> | null
+): number {
+  const pathwayCarePathGroups = buildPathwayCarePathFilterGroups(patientLinks);
+  return patientLinks
+    .filter((link) => !isCarePlanConversionRowComplete(link))
+    .filter((link) =>
+      matchesCarePlanToolbarFilters(
+        link,
+        '',
+        PATHWAY_CARE_PATH_FILTER_ALL,
+        pathwayCarePathGroups,
+        null,
+        null,
+        visitDateRange,
+        visitCountsByEnrollId,
+        []
+      )
+    ).length;
+}
+
+export function useCarePlanTabPendingCount({
+  patientLinks,
+  hasServiceDataImports,
+  serviceDataRefreshKey,
+  fetchSsdbServiceDateBounds,
+  fetchVisitCountsByEnrollIdInDateRange,
+}: {
+  patientLinks: CarePlanPatientLink[];
+  hasServiceDataImports: boolean;
+  serviceDataRefreshKey: string;
+  fetchSsdbServiceDateBounds: () => Promise<{
+    from: string;
+    to: string;
+    error: string | null;
+  }>;
+  fetchVisitCountsByEnrollIdInDateRange: (
+    startDate: string,
+    endDate: string
+  ) => Promise<{ visitCountsByEnrollId: Map<string, number>; error: string | null }>;
+}): number {
+  const emptyVisitDateRange = useMemo<CarePlanDateRange>(() => ({ from: '', to: '' }), []);
+  const [visitDateRange, setVisitDateRange] = useState<CarePlanDateRange>(emptyVisitDateRange);
+  const [visitCountsByEnrollId, setVisitCountsByEnrollId] = useState<Map<string, number> | null>(
+    () => new Map()
+  );
+
+  useEffect(() => {
+    if (!hasServiceDataImports) {
+      setVisitDateRange(emptyVisitDateRange);
+      setVisitCountsByEnrollId(new Map());
+      return;
+    }
+
+    let cancelled = false;
+    void fetchSsdbServiceDateBounds().then(({ from }) => {
+      if (cancelled) return;
+      setVisitDateRange(buildDefaultCarePlanVisitDateRange(from));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    hasServiceDataImports,
+    serviceDataRefreshKey,
+    fetchSsdbServiceDateBounds,
+    emptyVisitDateRange,
+  ]);
+
+  useEffect(() => {
+    if (!hasServiceDataImports || !visitDateRangeIsActive(visitDateRange)) {
+      setVisitCountsByEnrollId(new Map());
+      return;
+    }
+
+    let cancelled = false;
+    setVisitCountsByEnrollId(null);
+    void fetchVisitCountsByEnrollIdInDateRange(visitDateRange.from, visitDateRange.to).then(
+      ({ visitCountsByEnrollId: counts }) => {
+        if (!cancelled) {
+          setVisitCountsByEnrollId(counts);
+        }
+      }
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    hasServiceDataImports,
+    serviceDataRefreshKey,
+    visitDateRange,
+    fetchVisitCountsByEnrollIdInDateRange,
+  ]);
+
+  return useMemo(
+    () => countPendingCarePlanLinks(patientLinks, visitDateRange, visitCountsByEnrollId),
+    [patientLinks, visitDateRange, visitCountsByEnrollId]
+  );
+}
+
 interface CarePlanConversionPanelProps {
   hasCarePlanImports: boolean;
   hasServiceDataImports: boolean;
@@ -1040,7 +1145,7 @@ export function CarePlanConversionPanel({
     key: CarePlanTableSortKey;
     direction: SortDirection;
   } | null>(null);
-  const [stackExpandMode, setStackExpandMode] = useState<'none' | 'main' | 'split'>('none');
+  const [stackExpandMode, setStackExpandMode] = useState<'none' | 'main' | 'split'>('main');
 
   const toggleStackExpand = (target: 'main' | 'split') => {
     setStackExpandMode((prev) => (prev === target ? 'none' : target));
@@ -1070,9 +1175,9 @@ export function CarePlanConversionPanel({
     }
 
     let cancelled = false;
-    void fetchSsdbServiceDateBounds().then(({ from, to }) => {
+    void fetchSsdbServiceDateBounds().then(({ from }) => {
       if (cancelled) return;
-      const bounds = { from, to };
+      const bounds = buildDefaultCarePlanVisitDateRange(from);
       setDefaultVisitDateRange(bounds);
       setVisitDateRange(bounds);
     });
@@ -1180,9 +1285,14 @@ export function CarePlanConversionPanel({
     ]
   );
 
-  const displaySummary = useMemo(
-    () => summarizeCarePlanLinks(toolbarScopedLinks),
+  const pendingToolbarScopedLinks = useMemo(
+    () => toolbarScopedLinks.filter((link) => !isCarePlanConversionRowComplete(link)),
     [toolbarScopedLinks]
+  );
+
+  const displaySummary = useMemo(
+    () => summarizeCarePlanLinks(pendingToolbarScopedLinks),
+    [pendingToolbarScopedLinks]
   );
 
   const filteredPatientLinks = useMemo(

@@ -1,6 +1,7 @@
 import {
+  buildHandledMrnSet,
   DISCHARGE_STRATEGY,
-  ICL_REASSESSMENT_STRATEGY,
+  isIclDecisionRequiredRecord,
   recordBelongsToStrategyTab,
 } from '../progress/recordStrategyTabs';
 import { normalizeMrnForMatch } from '../reconciliation/reconcileReportRows';
@@ -54,16 +55,14 @@ export function isInCarePlanAnalysisScope(record: EpicConversionRecord): boolean
 
 export function isEligibleForCarePlanLinking(
   record: EpicConversionRecord,
-  validatedRecordIds: ReadonlySet<string>
+  validatedRecordIds: ReadonlySet<string>,
+  handledMrns?: ReadonlySet<string>
 ): CarePlanEligibilityReason[] {
   if (record.status === 'discharged') return [];
 
   const reasons: CarePlanEligibilityReason[] = [];
 
-  if (
-    record.episode_conversion_strategy === ICL_REASSESSMENT_STRATEGY &&
-    !record.icl_decision
-  ) {
+  if (isIclDecisionRequiredRecord(record, handledMrns)) {
     reasons.push('icl_pending');
   }
 
@@ -177,12 +176,17 @@ export function buildCarePlanPatientLinks(
 ): CarePlanPatientLink[] {
   const { byBrn, byGcn } = indexCarePlanRows(carePlanRows, sourceFilenameByImportId);
   const emarIndex = buildEmarRowIndex(emarRows, emarSourceFilenameByImportId);
+  const handledMrns = buildHandledMrnSet(records);
   const links: CarePlanPatientLink[] = [];
 
   for (const record of records) {
     if (!isInCarePlanAnalysisScope(record)) continue;
 
-    const eligibilityReasons = isEligibleForCarePlanLinking(record, validatedRecordIds);
+    const eligibilityReasons = isEligibleForCarePlanLinking(
+      record,
+      validatedRecordIds,
+      handledMrns
+    );
 
     links.push({
       recordId: record.id,
@@ -246,6 +250,16 @@ export const CARE_PLAN_UPDATE_REQUIRED_BEFORE_MS = Date.parse('2026-05-19T12:00:
 export interface CarePlanDateRange {
   from: string;
   to: string;
+}
+
+/** Default end date for the care plan conversion visit date filter. */
+export const CARE_PLAN_DEFAULT_VISIT_TO_DATE = '2026-07-05';
+
+export function buildDefaultCarePlanVisitDateRange(dataMinDate: string): CarePlanDateRange {
+  return {
+    from: dataMinDate,
+    to: CARE_PLAN_DEFAULT_VISIT_TO_DATE,
+  };
 }
 
 /** @deprecated Use CarePlanDateRange */
