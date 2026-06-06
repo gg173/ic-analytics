@@ -114,7 +114,7 @@ async function fetchWeekCountsForPayYear(weekStarts: string[]): Promise<Map<stri
 
     const status = row.billing_status as BillingStatus;
     counts.total++;
-    if (status === 'billable' || status === 'clean') counts.billable++;
+    if (status === 'billable') counts.billable++;
     else if (status === 'not_billable') counts.notBillable++;
   }
 
@@ -153,7 +153,7 @@ async function fetchDayCountsForRange(
     const status = row.billing_status as BillingStatus;
     const existing = map.get(date) ?? { total: 0, billable: 0, notBillable: 0, dq: 0, inv: 0 };
     existing.total++;
-    if (status === 'billable' || status === 'clean') existing.billable++;
+    if (status === 'billable') existing.billable++;
     else if (status === 'not_billable') existing.notBillable++;
     else if (status === 'data_quality') existing.dq++;
     else if (status === 'needs_investigation') existing.inv++;

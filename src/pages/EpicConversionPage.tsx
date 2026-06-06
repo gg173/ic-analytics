@@ -15,7 +15,6 @@ import {
 import {
   CarePlanConversionPanel,
   useCarePlanConversionData,
-  useCarePlanTabPendingCount,
 } from '../epicConversion/components/CarePlanConversionPanel';
 import {
   ConsolidatedImportUploadDialog,
@@ -52,21 +51,16 @@ import {
   isValidatedOutcome,
   matchesReconciliationOutcomeFilter,
 } from '../epicConversion/reconciliation/reconcileReportRows';
-import type {
-  ReconciliationDetailRow,
-  ReconciliationOutcomeFilter,
-} from '../epicConversion/reconciliation/types';
+import type { ReconciliationOutcomeFilter } from '../epicConversion/reconciliation/types';
 import { computeImportActivity } from '../epicConversion/progress/computeImportActivity';
 import { formatStrategyBreakdown } from '../epicConversion/progress/computeImportActivity';
 import { buildUnifiedImportActivity } from '../epicConversion/progress/computeUnifiedImportActivity';
 import { computeDailyProgressSeries } from '../epicConversion/progress/computeDailyProgressSeries';
 import { computeProgressMetrics } from '../epicConversion/progress/computeProgressMetrics';
 import {
-  buildHandledMrnSet,
   DISCHARGE_STRATEGY,
   EPISODE_CONVERSION_STRATEGY,
   ICL_REASSESSMENT_STRATEGY,
-  isIclDecisionRequiredRecord,
   NO_STRATEGY_LABEL,
   recordBelongsToStrategyTab,
   recordBelongsToStrategyTabBadge,
@@ -151,52 +145,6 @@ function resolveDischargeDate(
     case 'other':
       return customDate;
   }
-}
-
-function reconciliationRowMatchesToolbarFilters(
-  row: ReconciliationDetailRow,
-  record: EpicConversionRecord | undefined,
-  options: {
-    search: string;
-    pathwayFilter: string[] | null;
-    carePathFilter: string[] | null;
-    icLeadFilter: string[] | null;
-    losCategoryFilter: string[] | null;
-    latestSrvFilter: string[] | null;
-    pathwayOptions: readonly string[];
-    carePathOptions: readonly string[];
-    icLeadOptions: readonly string[];
-    losCategoryOptions: readonly string[];
-    latestSrvOptions: readonly string[];
-  }
-): boolean {
-  const pathway = record?.pathway ?? row.matchedPathway ?? row.pathway;
-  const carePath = record?.care_path ?? null;
-  const icLead = record?.ic_lead ?? row.matchedIcLead ?? row.icLead;
-  const losCategory = record?.los_category ?? null;
-  const latestSrv = record?.latest_srv ?? null;
-
-  if (!matchesMultiFilter(options.losCategoryFilter, losCategory, options.losCategoryOptions)) {
-    return false;
-  }
-  if (!matchesMultiFilter(options.latestSrvFilter, latestSrv, options.latestSrvOptions)) {
-    return false;
-  }
-  if (!matchesMultiFilter(options.pathwayFilter, pathway, options.pathwayOptions)) return false;
-  if (!matchesMultiFilter(options.carePathFilter, carePath, options.carePathOptions)) return false;
-  if (!matchesMultiFilter(options.icLeadFilter, icLead, options.icLeadOptions)) return false;
-
-  const q = options.search.trim().toLowerCase();
-  if (!q) return true;
-  return [
-    row.mrn,
-    row.matchedMrn,
-    row.pathway,
-    row.matchedPathway,
-    row.icLead,
-    row.matchedIcLead,
-    record?.gcn,
-  ].some((value) => value?.toLowerCase().includes(q));
 }
 
 function isDischargeSubmitReady(
@@ -602,7 +550,7 @@ export function EpicConversionPage() {
     setIclDecision,
     deleteImport,
   } = useEpicConversionRecords();
-  const { user, profile, isAppAdmin } = useAuth();
+  const { user, profile } = useAuth();
   const {
     reportImports,
     reportError,
@@ -619,7 +567,7 @@ export function EpicConversionPage() {
     refreshReports,
     fetchReportRowsForImport,
     deleteReport,
-  } = useEpicConversionReports(records, { refreshEnrolments: refreshRecords });
+  } = useEpicConversionReports(records);
   const {
     imports: carePlanImports,
     carePlanRows,
@@ -1036,36 +984,7 @@ export function EpicConversionPage() {
     return tabs;
   }, [records]);
 
-  const visibleStrategyTabs = useMemo(
-    () =>
-      isAppAdmin
-        ? strategyTabs
-        : strategyTabs.filter((tab) => tab !== ICL_REASSESSMENT_STRATEGY),
-    [strategyTabs, isAppAdmin]
-  );
-
   const [activeTab, setActiveTab] = useState<string | null>(PROGRESS_TRACKER_TAB);
-
-  const clearToolbarFilters = useCallback(() => {
-    setSearch('');
-    setPathwayFilter(null);
-    setCarePathFilter(null);
-    setIcLeadFilter(null);
-    setLosCategoryFilter(null);
-    setLatestSrvFilter(null);
-  }, []);
-
-  const resetTabFilters = useCallback(() => {
-    clearToolbarFilters();
-    setStatusFilter('all');
-    setReconciliationOutcomeFilter('all');
-    setCompletionValidationFilter('all');
-  }, [clearToolbarFilters]);
-
-  useEffect(() => {
-    resetTabFilters();
-  }, [activeTab, resetTabFilters]);
-
   const isUploadTab = activeTab === UPLOAD_DATA_TAB;
   const isProgressTrackerTab = activeTab === PROGRESS_TRACKER_TAB;
   const isDiscrepanciesTab = activeTab === EPISODE_VALIDATION_TAB;
@@ -1285,7 +1204,8 @@ export function EpicConversionPage() {
     ]
   );
 
-  const { patientLinks: carePlanPatientLinks } = useCarePlanConversionData(
+  const { patientLinks: carePlanPatientLinks, summary: carePlanSummary } =
+    useCarePlanConversionData(
       records,
       carePlanRows,
       carePlanImportFilenames,
@@ -1293,16 +1213,6 @@ export function EpicConversionPage() {
       emarRows,
       emarImportFilenames
     );
-  const carePlanServiceDataRefreshKey = serviceDataImports
-    .map((imp) => `${imp.id}:${imp.imported_at}:${imp.row_count}`)
-    .join('|');
-  const carePlanPendingCount = useCarePlanTabPendingCount({
-    patientLinks: carePlanPatientLinks,
-    hasServiceDataImports: serviceDataImports.length > 0,
-    serviceDataRefreshKey: carePlanServiceDataRefreshKey,
-    fetchSsdbServiceDateBounds,
-    fetchVisitCountsByEnrollIdInDateRange,
-  });
 
   const epicValidationByRecordId = useMemo(
     () =>
@@ -1345,49 +1255,14 @@ export function EpicConversionPage() {
           return false;
         }
         const record = row.matchedRecordId ? recordsById.get(row.matchedRecordId) : undefined;
-        if (record && isConversionPendingEpicAdjudication(record, latestEpicImportedAt)) {
-          return false;
-        }
-        return reconciliationRowMatchesToolbarFilters(row, record, {
-          search,
-          pathwayFilter,
-          carePathFilter,
-          icLeadFilter,
-          losCategoryFilter,
-          latestSrvFilter,
-          pathwayOptions,
-          carePathOptions,
-          icLeadOptions,
-          losCategoryOptions,
-          latestSrvOptions,
-        });
+        return !record || !isConversionPendingEpicAdjudication(record, latestEpicImportedAt);
       }),
-    [
-      unifiedReconciliationDetails,
-      reconciliationOutcomeFilter,
-      recordsById,
-      latestEpicImportedAt,
-      search,
-      pathwayFilter,
-      carePathFilter,
-      icLeadFilter,
-      losCategoryFilter,
-      latestSrvFilter,
-      pathwayOptions,
-      carePathOptions,
-      icLeadOptions,
-      losCategoryOptions,
-      latestSrvOptions,
-    ]
+    [unifiedReconciliationDetails, reconciliationOutcomeFilter, recordsById, latestEpicImportedAt]
   );
 
   useEffect(() => {
     if (loading) return;
-    if (!isAppAdmin && activeTab === ICL_REASSESSMENT_STRATEGY) {
-      setActiveTab(PROGRESS_TRACKER_TAB);
-      return;
-    }
-    if (visibleStrategyTabs.length === 0) {
+    if (strategyTabs.length === 0) {
       if (activeTab !== UPLOAD_DATA_TAB) setActiveTab(UPLOAD_DATA_TAB);
       return;
     }
@@ -1400,16 +1275,20 @@ export function EpicConversionPage() {
     ) {
       return;
     }
-    if (!activeTab || !visibleStrategyTabs.includes(activeTab)) {
+    if (!activeTab || !strategyTabs.includes(activeTab)) {
       setActiveTab(PROGRESS_TRACKER_TAB);
     }
-  }, [visibleStrategyTabs, activeTab, loading, isAppAdmin]);
+  }, [strategyTabs, activeTab, loading]);
 
-  const isIclTab = isAppAdmin && activeTab === ICL_REASSESSMENT_STRATEGY;
+  const isIclTab = activeTab === ICL_REASSESSMENT_STRATEGY;
   const isDischargeTab = activeTab === DISCHARGE_STRATEGY;
 
   useEffect(() => {
     setStackExpandMode('none');
+  }, [activeTab]);
+
+  useEffect(() => {
+    setCompletionValidationFilter('all');
   }, [activeTab]);
 
   const toggleEpicTableSort = (key: EpicTableSortKey) => {
@@ -1481,27 +1360,33 @@ export function EpicConversionPage() {
     losCategoryFilter !== null ||
     latestSrvFilter !== null;
 
-  const handledMrnSet = useMemo(() => buildHandledMrnSet(records), [records]);
+  const clearToolbarFilters = () => {
+    setSearch('');
+    setPathwayFilter(null);
+    setCarePathFilter(null);
+    setIcLeadFilter(null);
+    setLosCategoryFilter(null);
+    setLatestSrvFilter(null);
+  };
+
 
   // Per-tab counts reflect the active filters and match each tab's main panel.
   const countsByStrategy = useMemo(() => {
     const map = new Map<string, number>();
     for (const r of filtered) {
-      for (const tab of visibleStrategyTabs) {
-        if (recordBelongsToStrategyTabBadge(r, tab, handledMrnSet)) {
+      for (const tab of strategyTabs) {
+        if (recordBelongsToStrategyTabBadge(r, tab)) {
           map.set(tab, (map.get(tab) ?? 0) + 1);
         }
       }
     }
     return map;
-  }, [filtered, visibleStrategyTabs, handledMrnSet]);
+  }, [filtered, strategyTabs]);
 
   const activeRecords = useMemo(() => {
     if (isSpecialTab || !activeTab) return [];
-    return filtered.filter((r) =>
-      recordBelongsToStrategyTab(r, activeTab, handledMrnSet)
-    );
-  }, [filtered, activeTab, isSpecialTab, handledMrnSet]);
+    return filtered.filter((r) => recordBelongsToStrategyTab(r, activeTab));
+  }, [filtered, activeTab, isSpecialTab]);
 
   const episodeConversionPendingRecords = useMemo(() => {
     if (!isEpisodeConversionTab) return [];
@@ -1547,8 +1432,11 @@ export function EpicConversionPage() {
 
   const iclPendingRecords = useMemo(() => {
     if (!isIclTab) return [];
-    return filtered.filter((r) => isIclDecisionRequiredRecord(r, handledMrnSet));
-  }, [filtered, isIclTab, handledMrnSet]);
+    return filtered.filter(
+      (r) =>
+        r.episode_conversion_strategy === ICL_REASSESSMENT_STRATEGY && !r.icl_decision
+    );
+  }, [filtered, isIclTab]);
 
   const iclPendingIdSet = useMemo(
     () => new Set(iclPendingRecords.map((r) => r.id)),
@@ -2093,7 +1981,7 @@ export function EpicConversionPage() {
     } else {
       setStatusChangePrompt(null);
       setActiveTab(
-        target === 'icl' && isAppAdmin
+        target === 'icl'
           ? ICL_REASSESSMENT_STRATEGY
           : target === 'episode'
             ? EPISODE_CONVERSION_STRATEGY
@@ -2189,7 +2077,7 @@ export function EpicConversionPage() {
           >
             {PROGRESS_TRACKER_TAB}
           </button>
-          {visibleStrategyTabs.flatMap((strategy) => {
+          {strategyTabs.flatMap((strategy) => {
             const strategyTab = (
               <button
                 key={strategy}
@@ -2232,9 +2120,9 @@ export function EpicConversionPage() {
                 onClick={() => setActiveTab(CARE_PLAN_CONVERSION_TAB)}
               >
                 {CARE_PLAN_CONVERSION_TAB}
-                {carePlanPendingCount > 0 && (
+                {carePlanSummary.withoutCarePlanCount > 0 && (
                   <span className="hc-strategy-tab-count hc-strategy-tab-count--care-plan">
-                    {carePlanPendingCount}
+                    {carePlanSummary.withoutCarePlanCount}
                   </span>
                 )}
               </button>
@@ -2263,7 +2151,7 @@ export function EpicConversionPage() {
 
             return [strategyTab, episodeValidationTab];
           })}
-          {!visibleStrategyTabs.includes(EPISODE_CONVERSION_STRATEGY) && (
+          {!strategyTabs.includes(EPISODE_CONVERSION_STRATEGY) && (
             <button
               type="button"
               className={`hc-strategy-tab${
@@ -2277,7 +2165,7 @@ export function EpicConversionPage() {
               )}
             </button>
           )}
-          {!visibleStrategyTabs.includes(DISCHARGE_STRATEGY) && (
+          {!strategyTabs.includes(DISCHARGE_STRATEGY) && (
             <>
               <button
                 type="button"
@@ -2287,9 +2175,9 @@ export function EpicConversionPage() {
                 onClick={() => setActiveTab(CARE_PLAN_CONVERSION_TAB)}
               >
                 {CARE_PLAN_CONVERSION_TAB}
-                {carePlanPendingCount > 0 && (
+                {carePlanSummary.withoutCarePlanCount > 0 && (
                   <span className="hc-strategy-tab-count hc-strategy-tab-count--care-plan">
-                    {carePlanPendingCount}
+                    {carePlanSummary.withoutCarePlanCount}
                   </span>
                 )}
               </button>
@@ -2335,7 +2223,7 @@ export function EpicConversionPage() {
       {statusError && <p className="hc-form-error">{statusError}</p>}
       {error && <p className="hc-form-error">{error}</p>}
 
-      {!loading && (!isSpecialTab || isDiscrepanciesTab) && records.length > 0 && (
+      {!loading && !isSpecialTab && records.length > 0 && (
       <div className="hc-toolbar">
         <label className="hc-search">
           <input
@@ -2346,7 +2234,7 @@ export function EpicConversionPage() {
             aria-label="Search MRN, Pathway, IC Lead"
           />
         </label>
-        {!isIclTab && (isEpisodeConversionTab || isDiscrepanciesTab) ? (
+        {!isIclTab && isEpisodeConversionTab ? (
           <>
             <div className="hc-toolbar-field">
               LOS
@@ -2570,7 +2458,9 @@ export function EpicConversionPage() {
       <CarePlanConversionPanel
         hasCarePlanImports={carePlanImports.length > 0}
         hasServiceDataImports={serviceDataImports.length > 0}
-        serviceDataRefreshKey={carePlanServiceDataRefreshKey}
+        serviceDataRefreshKey={serviceDataImports
+          .map((imp) => `${imp.id}:${imp.imported_at}:${imp.row_count}`)
+          .join('|')}
         patientLinks={carePlanPatientLinks}
         fetchSsdbServiceDateBounds={fetchSsdbServiceDateBounds}
         fetchVisitCountsByEnrollIdInDateRange={fetchVisitCountsByEnrollIdInDateRange}
@@ -2632,7 +2522,6 @@ export function EpicConversionPage() {
         carePlanUploaderByUserId={carePlanUploaderByUserId}
         onNavigateToStrategy={setActiveTab}
         onNavigateToCarePlan={() => setActiveTab(CARE_PLAN_CONVERSION_TAB)}
-        showIclReassessment={isAppAdmin}
       />
     )}
     {!loading && !isSpecialTab && records.length > 0 && (
@@ -2845,16 +2734,14 @@ export function EpicConversionPage() {
             MRN {statusChangePrompt.record.mrn} — choose where to move this record:
           </p>
           <div className="hc-discharge-status-change-actions">
-            {isAppAdmin && (
-              <button
-                type="button"
-                className="hc-btn hc-btn-primary"
-                disabled={updatingId === statusChangePrompt.record.id}
-                onClick={() => void confirmStatusChange('icl')}
-              >
-                ICL Decision Required
-              </button>
-            )}
+            <button
+              type="button"
+              className="hc-btn hc-btn-primary"
+              disabled={updatingId === statusChangePrompt.record.id}
+              onClick={() => void confirmStatusChange('icl')}
+            >
+              ICL Decision Required
+            </button>
             {statusChangePrompt.flow === 'discharge' ? (
               <button
                 type="button"

@@ -1,6 +1,6 @@
 import {
   DISCHARGE_STRATEGY,
-  EPISODE_CONVERSION_STRATEGY,
+  ICL_REASSESSMENT_STRATEGY,
 } from '../progress/recordStrategyTabs';
 import type { EpicConversionInsertRow, EpicConversionRecord } from '../types';
 
@@ -114,17 +114,7 @@ export function buildSsdbEnrolmentSyncUpdate(
   const prevStrategy = existing.episode_conversion_strategy;
 
   if (nextStrategy !== prevStrategy) {
-    // Preserve submitted ICL decisions across metric-driven strategy changes (e.g. ICL →
-    // Episode Conversion → ICL as LOS/LVD updates). Only clear when the new SSDB strategy
-    // directly contradicts the prior decision.
-    if (existing.icl_decision === 'discharge' && nextStrategy === EPISODE_CONVERSION_STRATEGY) {
-      sync.icl_decision = null;
-      sync.icl_decision_by = null;
-      sync.icl_decision_at = null;
-    } else if (
-      existing.icl_decision === 'convert' &&
-      nextStrategy === DISCHARGE_STRATEGY
-    ) {
+    if (nextStrategy !== ICL_REASSESSMENT_STRATEGY && existing.icl_decision) {
       sync.icl_decision = null;
       sync.icl_decision_by = null;
       sync.icl_decision_at = null;
@@ -144,40 +134,5 @@ export function buildSsdbEnrolmentSyncUpdate(
   }
 
 
-  return sync;
-}
-
-
-/** Merge SSDB row onto an Epic-provisioned enrolment; preserve convert validation. */
-export function buildSsdbEnrolmentMergeOntoEpicProvisioned(
-  existing: Pick<
-    EpicConversionRecord,
-    | (typeof SSDB_ENROLMENT_SYNC_FIELD_NAMES)[number]
-    | 'episode_conversion_strategy'
-    | 'icl_decision'
-    | 'icl_decision_by'
-    | 'icl_decision_at'
-    | 'status'
-    | 'discharge_date'
-    | 'discharge_date_source'
-    | 'discharge_reason'
-    | 'completed_at'
-    | 'completed_by'
-  >,
-  incoming: EpicConversionInsertRow
-): Record<string, unknown> {
-  const sync = buildSsdbEnrolmentSyncUpdate(existing, incoming);
-  sync.enroll_id = incoming.enroll_id?.trim() ?? null;
-  sync.completed_at = existing.completed_at;
-  sync.completed_by = existing.completed_by;
-  if (existing.completed_at) {
-    sync.episode_conversion_strategy =
-      existing.episode_conversion_strategy ?? EPISODE_CONVERSION_STRATEGY;
-    if (existing.icl_decision) {
-      sync.icl_decision = existing.icl_decision;
-      sync.icl_decision_by = existing.icl_decision_by;
-      sync.icl_decision_at = existing.icl_decision_at;
-    }
-  }
   return sync;
 }

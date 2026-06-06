@@ -78,7 +78,7 @@ export function DashboardTab({ payPeriods, vhaCycles, periodsLoading, cyclesLoad
                 </div>
                 <div className="hc-billing-stat hc-billing-stat--clean">
                   <span className="hc-billing-stat-value">{summary.clean + summary.billable}</span>
-                  <span className="hc-billing-stat-label">Billable</span>
+                  <span className="hc-billing-stat-label">Clean / Billable</span>
                 </div>
                 <div className="hc-billing-stat hc-billing-stat--warning">
                   <span className="hc-billing-stat-value">{summary.data_quality}</span>

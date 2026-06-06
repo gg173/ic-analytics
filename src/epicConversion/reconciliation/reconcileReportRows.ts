@@ -101,11 +101,6 @@ function classifyMatch(
     return { outcome: 'field_discrepancy', field_discrepancies: fieldDiscrepancies };
   }
 
-  // Epic report match with aligned fields proves conversion (validated enrolment).
-  if (record.completed_at || isPerfectFieldMatch(reportRow, record)) {
-    return { outcome: 'validated', field_discrepancies: [] };
-  }
-
   if (isMatchedStatusDiscrepancy(record)) {
     return { outcome: 'status_discrepancy', field_discrepancies: [] };
   }
@@ -206,7 +201,6 @@ export function isEpicReconciliationDiscrepancy(
   recordsById: Map<string, EpicConversionRecord>,
   latestEpicImportedAt: string | null | undefined
 ): boolean {
-  if (row.outcome === 'missing_from_epic') return false;
   if (!isDiscrepancyOutcome(row.outcome)) return false;
   if (!row.matchedRecordId) return true;
   const record = recordsById.get(row.matchedRecordId);
@@ -486,8 +480,6 @@ export function buildEpicValidationStatusByRecordId(
     }
 
     if (map.get(row.matchedRecordId)?.status === 'validated') continue;
-
-    if (row.outcome === 'missing_from_epic') continue;
 
     if (isDiscrepancyOutcome(row.outcome)) {
       map.set(row.matchedRecordId, {

@@ -15,7 +15,6 @@ import {
   summarizeReconciliationOutcomes,
   summarizeReconciliationOutcomesExcludingPendingAdjudication,
 } from '../reconciliation/reconcileReportRows';
-import { persistEpicConvertEnrolments } from '../reconciliation/persistEpicConvertEnrolments';
 import type {
   EpicConversionReconciliationResult,
   EpicConversionReportImport,
@@ -94,46 +93,7 @@ async function fetchSummaryForImport(
   };
 }
 
-
-async function fetchEnrolmentRecordsForReconcile(): Promise<EpicConversionRecord[]> {
-  const { data, error } = await supabase
-    .from('epic_conversion_records')
-    .select('*')
-    .order('imported_at', { ascending: false })
-    .order('mrn', { ascending: true });
-  if (error) return [];
-  return (data as EpicConversionRecord[]) ?? [];
-}
-
-async function applyEpicReportEnrolmentSync(
-  reportRows: EpicConversionReportRow[],
-  vhaRecords: readonly EpicConversionRecord[],
-  options: {
-    sourceFilename: string;
-    importedAt: string;
-    importedBy: string | null;
-    refreshEnrolments?: () => Promise<void>;
-  }
-): Promise<{ error: string | null; records: EpicConversionRecord[] }> {
-  const persist = await persistEpicConvertEnrolments(reportRows, vhaRecords, {
-    sourceFilename: options.sourceFilename,
-    importedAt: options.importedAt,
-    importedBy: options.importedBy,
-  });
-  if (persist.error) {
-    return { error: persist.error, records: [...vhaRecords] };
-  }
-  if (persist.provisioned || persist.updated) {
-    await options.refreshEnrolments?.();
-    return { error: null, records: await fetchEnrolmentRecordsForReconcile() };
-  }
-  return { error: null, records: [...vhaRecords] };
-}
-
-export function useEpicConversionReports(
-  vhaRecords: EpicConversionRecord[],
-  hookOptions?: { refreshEnrolments?: () => Promise<void> }
-) {
+export function useEpicConversionReports(vhaRecords: EpicConversionRecord[]) {
   const [imports, setImports] = useState<EpicConversionReportImport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -243,23 +203,11 @@ export function useEpicConversionReports(
       .filter((row) => row.importedAt);
 
     const mergedRows = mergeEpicReportRowsByMrn(rowsWithMeta);
-    const latestImportMeta = importMetaById.get(latestImportId);
-    const syncResult = await applyEpicReportEnrolmentSync(mergedRows, vhaRecords, {
-      sourceFilename: latestImportMeta?.source_filename ?? 'Epic conversion report',
-      importedAt: latestImportedAt,
-      importedBy: null,
-      refreshEnrolments: hookOptions?.refreshEnrolments,
-    });
-    if (syncResult.error) {
-      setUnifiedReconciliationDetails([]);
-      return [];
-    }
-    const recordsForReconcile = syncResult.records;
     const latestEpicImportedAt = getLatestEpicImportedAt(
       [...importMetaById.values()].map((imp) => imp.imported_at)
     );
-    const reconciliation = reconcileReportRows(mergedRows, recordsForReconcile);
-    const recordsById = new Map(recordsForReconcile.map((r) => [r.id, r]));
+    const reconciliation = reconcileReportRows(mergedRows, vhaRecords);
+    const recordsById = new Map(vhaRecords.map((r) => [r.id, r]));
     const epicDetails = buildReconciliationDetails(
       mergedRows,
       reconciliation,
@@ -267,14 +215,14 @@ export function useEpicConversionReports(
       importFilenameById
     );
     const missingFromEpic = findConvertedRecordsMissingFromEpic(
-      recordsForReconcile,
+      vhaRecords,
       mergedRows,
       latestEpicImportedAt
     );
     const details = [...epicDetails, ...missingFromEpic];
     setUnifiedReconciliationDetails(details);
     return details;
-  }, [vhaRecords, hookOptions?.refreshEnrolments]);
+  }, [vhaRecords]);
 
   const uploadReport = useCallback(
     async (file: File, importedBy?: string | null): Promise<EpicReportUploadResult> => {
@@ -350,25 +298,7 @@ export function useEpicConversionReports(
           insertedRows.push(...((rowData as EpicConversionReportRow[]) ?? []));
         }
 
-        const syncResult = await applyEpicReportEnrolmentSync(insertedRows, vhaRecords, {
-          sourceFilename: file.name,
-          importedAt,
-          importedBy: importedBy ?? null,
-          refreshEnrolments: hookOptions?.refreshEnrolments,
-        });
-        if (syncResult.error) {
-          await supabase.from('epic_conversion_report_imports').delete().eq('id', importId);
-          return {
-            error: syncResult.error,
-            importId: null,
-            rowCount: 0,
-            summary: null,
-            resolvedUnmatchedCount: 0,
-          };
-        }
-        const recordsForReconcile = syncResult.records;
-
-        const reconciliation = reconcileReportRows(insertedRows, recordsForReconcile);
+        const reconciliation = reconcileReportRows(insertedRows, vhaRecords);
 
         for (let i = 0; i < reconciliation.length; i += RECONCILIATION_CHUNK) {
           const chunk = reconciliation.slice(i, i + RECONCILIATION_CHUNK).map((row) => ({
@@ -405,7 +335,7 @@ export function useEpicConversionReports(
 
         await refresh();
         setLatestSummary(summary);
-        const recordsById = new Map(recordsForReconcile.map((r) => [r.id, r]));
+        const recordsById = new Map(vhaRecords.map((r) => [r.id, r]));
         setReconciliationDetails(
           buildReconciliationDetails(
             insertedRows,
@@ -439,7 +369,7 @@ export function useEpicConversionReports(
         };
       }
     },
-    [vhaRecords, refresh, loadUnifiedReconciliationDetails, unifiedReconciliationDetails, hookOptions?.refreshEnrolments]
+    [vhaRecords, refresh, loadUnifiedReconciliationDetails, unifiedReconciliationDetails]
   );
 
   const loadReconciliationDetails = useCallback(
@@ -503,18 +433,7 @@ export function useEpicConversionReports(
         }
 
         const rows = (reportRows as EpicConversionReportRow[]) ?? [];
-        const importMeta = imports.find((imp) => imp.id === importId);
-        const syncResult = await applyEpicReportEnrolmentSync(rows, vhaRecords, {
-          sourceFilename: importMeta?.source_filename ?? 'Epic conversion report',
-          importedAt: importMeta?.imported_at ?? new Date().toISOString(),
-          importedBy: importMeta?.imported_by ?? null,
-          refreshEnrolments: hookOptions?.refreshEnrolments,
-        });
-        if (syncResult.error) {
-          return { error: syncResult.error };
-        }
-        const recordsForReconcile = syncResult.records;
-        const reconciliation = reconcileReportRows(rows, recordsForReconcile);
+        const reconciliation = reconcileReportRows(rows, vhaRecords);
 
         const { error: deleteError } = await supabase
           .from('epic_conversion_reconciliation_results')
@@ -544,7 +463,7 @@ export function useEpicConversionReports(
         }
 
         if (updateView) {
-          const recordsById = new Map(recordsForReconcile.map((r) => [r.id, r]));
+          const recordsById = new Map(vhaRecords.map((r) => [r.id, r]));
           const importFilenameById = new Map(imports.map((imp) => [imp.id, imp.source_filename]));
           setReconciliationDetails(
             buildReconciliationDetails(rows, reconciliation, recordsById, importFilenameById)
@@ -565,7 +484,7 @@ export function useEpicConversionReports(
         }
       }
     },
-    [vhaRecords, refresh, imports, hookOptions?.refreshEnrolments]
+    [vhaRecords, refresh, imports]
   );
 
   const recheckUnifiedReconciliation = useCallback(async (): Promise<{ error: string | null }> => {

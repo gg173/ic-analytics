@@ -1,4 +1,3 @@
-import { normalizeMrnForMatch } from '../reconciliation/reconcileReportRows';
 import type { EpicConversionRecord } from '../types';
 import {
   DISCHARGE_STRATEGY,
@@ -102,22 +101,6 @@ function belongsToIclTabOnDay(record: EpicConversionRecord, dayIso: string): boo
   );
 }
 
-function mrnHandledOnDay(
-  records: readonly EpicConversionRecord[],
-  mrn: string,
-  dayIso: string
-): boolean {
-  const key = normalizeMrnForMatch(mrn);
-  if (!key) return false;
-  for (const record of records) {
-    if (normalizeMrnForMatch(record.mrn) !== key) continue;
-    if (wasDischargedByDay(record, dayIso) || wasConvertedByDay(record, dayIso)) {
-      return true;
-    }
-  }
-  return false;
-}
-
 function wasDischargedByDay(record: EpicConversionRecord, dayIso: string): boolean {
   return dateOnOrBefore(record.discharged_at, dayIso);
 }
@@ -128,18 +111,13 @@ function wasConvertedByDay(record: EpicConversionRecord, dayIso: string): boolea
 
 function classifyRecordOnDay(
   record: EpicConversionRecord,
-  records: readonly EpicConversionRecord[],
   dayIso: string
 ): DailyProgressSegment | null {
   if (!wasImportedByDay(record, dayIso)) return null;
 
   if (wasDischargedByDay(record, dayIso)) return 'completeDischarged';
   if (wasConvertedByDay(record, dayIso)) return 'completeConverted';
-  if (belongsToIclTabOnDay(record, dayIso)) {
-    return mrnHandledOnDay(records, record.mrn, dayIso)
-      ? null
-      : 'pendingReassessment';
-  }
+  if (belongsToIclTabOnDay(record, dayIso)) return 'pendingReassessment';
   if (belongsToDischargeTabOnDay(record, dayIso)) return 'pendingDischarge';
   if (belongsToEpisodeTabOnDay(record, dayIso)) return 'pendingConversion';
 
@@ -168,7 +146,7 @@ export function computeDailyProgressSeries(
   return days.map((dayIso) => {
     const snapshot = emptySnapshot(dayIso);
     for (const record of records) {
-      const segment = classifyRecordOnDay(record, records, dayIso);
+      const segment = classifyRecordOnDay(record, dayIso);
       if (!segment) continue;
       snapshot[segment] += 1;
       snapshot.total += 1;

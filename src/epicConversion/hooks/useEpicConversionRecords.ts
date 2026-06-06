@@ -16,14 +16,11 @@ import {
   enrolmentRowsMatchForIngest,
   ssdbEnrolmentChangeFingerprint,
   SSDB_ENROLMENT_SYNC_FIELD_NAMES,
-  buildSsdbEnrolmentMergeOntoEpicProvisioned,
 } from '../ingest/ssdbEnrolmentIngest';
 import {
   buildSsdbAbsenceDischargeUpdate,
   enrollIdsAbsentFromSsdbUpload,
 } from '../ingest/ssdbReconciliation';
-import { hasEnrolmentDecision } from '../reconciliation/applyEpicConvertEnrolments';
-import { normalizeMrnForMatch } from '../reconciliation/reconcileReportRows';
 import {
   countStrategyBreakdown,
   DISCHARGE_STRATEGY,
@@ -100,8 +97,7 @@ export function useEpicConversionRecords() {
         .from('epic_conversion_records')
         .select('id, enroll_id, lvd, hosp_dc_date, registration_date, pathway')
         .not('enroll_id', 'is', null)
-        .is('status', null)
-        .is('completed_at', null);
+        .is('status', null);
 
       if (fetchError) return { error: fetchError.message, count: 0, patches };
 
@@ -168,10 +164,6 @@ export function useEpicConversionRecords() {
       | 'discharge_date'
       | 'discharge_date_source'
       | 'discharge_reason'
-      | 'completed_at'
-      | 'completed_by'
-      | 'icl_decision_by'
-      | 'icl_decision_at'
     >;
 
     const existingByEnrollId = new Map<string, ExistingEnrolmentRow>();
@@ -182,7 +174,7 @@ export function useEpicConversionRecords() {
         ? await supabase
             .from('epic_conversion_records')
             .select(
-              'id, enroll_id, gcn, mrn, pathway, care_path, support_tier, ic_lead, registration_date, hosp_dc_date, episode_conversion_strategy, los, los_category, latest_srv, days_since_lvd, lvd, lvt, source_filename, icl_decision, status, discharge_date, discharge_date_source, discharge_reason, completed_at, completed_by, icl_decision_by, icl_decision_at'
+              'id, enroll_id, gcn, mrn, pathway, care_path, support_tier, ic_lead, registration_date, hosp_dc_date, episode_conversion_strategy, los, los_category, latest_srv, days_since_lvd, lvd, lvt, source_filename, icl_decision, status, discharge_date, discharge_date_source, discharge_reason'
             )
             .in('enroll_id', batch)
         : await supabase
@@ -207,33 +199,6 @@ export function useEpicConversionRecords() {
       }
     }
 
-
-    const existingByMrnKey = new Map<string, ExistingEnrolmentRow>();
-    if (isSsdbUpload) {
-      const mrns = [...new Set(rows.map((row) => row.mrn.trim()).filter(Boolean))];
-      for (let i = 0; i < mrns.length; i += ENROLL_ID_LOOKUP_CHUNK) {
-        const batch = mrns.slice(i, i + ENROLL_ID_LOOKUP_CHUNK);
-        const mrnLookup = await supabase
-          .from('epic_conversion_records')
-          .select(
-            'id, enroll_id, gcn, mrn, pathway, care_path, support_tier, ic_lead, registration_date, hosp_dc_date, episode_conversion_strategy, los, los_category, latest_srv, days_since_lvd, lvd, lvt, source_filename, icl_decision, status, discharge_date, discharge_date_source, discharge_reason, completed_at, completed_by, icl_decision_by, icl_decision_at'
-          )
-          .in('mrn', batch)
-          .is('enroll_id', null)
-          .not('completed_at', 'is', null);
-
-        if (mrnLookup.error) {
-          return emptyResult({ error: mrnLookup.error.message });
-        }
-
-        for (const row of (mrnLookup.data as ExistingEnrolmentRow[] | null) ?? []) {
-          const key = normalizeMrnForMatch(row.mrn);
-          if (!key || existingByMrnKey.has(key)) continue;
-          existingByMrnKey.set(key, row);
-        }
-      }
-    }
-
     const rowsToInsert: EpicConversionInsertRow[] = [];
     const rowsToUpdate: { existingId: string; incoming: EpicConversionInsertRow }[] = [];
     let unchanged = 0;
@@ -243,23 +208,14 @@ export function useEpicConversionRecords() {
         rowsToInsert.push(row);
         continue;
       }
-      let existing = existingByEnrollId.get(row.enroll_id);
-      if (!existing && isSsdbUpload) {
-        const mrnKey = normalizeMrnForMatch(row.mrn);
-        existing = mrnKey ? existingByMrnKey.get(mrnKey) : undefined;
-      }
+      const existing = existingByEnrollId.get(row.enroll_id);
       if (!existing) {
         rowsToInsert.push(row);
         continue;
       }
       if (!isSsdbUpload) continue;
-      if (hasEnrolmentDecision(existing) && existing.enroll_id) {
-        unchanged += 1;
-        continue;
-      }
       const incomingFingerprint = ssdbEnrolmentChangeFingerprint(row);
-      const isEpicProvisionMerge = !existing.enroll_id && existing.completed_at != null;
-      if (!isEpicProvisionMerge && enrolmentRowsMatchForIngest(existing, row, incomingFingerprint)) {
+      if (enrolmentRowsMatchForIngest(existing, row, incomingFingerprint)) {
         unchanged += 1;
         continue;
       }
@@ -300,18 +256,9 @@ export function useEpicConversionRecords() {
     }
 
     const syncUpsertPayloads = rowsToUpdate.flatMap(({ existingId, incoming }) => {
-      let existing = existingByEnrollId.get(incoming.enroll_id!);
-      if (!existing) {
-        const mrnKey = normalizeMrnForMatch(incoming.mrn);
-        existing = mrnKey ? existingByMrnKey.get(mrnKey) : undefined;
-      }
+      const existing = existingByEnrollId.get(incoming.enroll_id!);
       if (!existing) return [];
-      const payload = !existing.enroll_id && existing.completed_at != null
-        ? {
-            id: existingId,
-            ...buildSsdbEnrolmentMergeOntoEpicProvisioned(existing, incoming),
-          }
-        : buildSsdbEnrolmentUpsertPayload(existingId, existing, incoming);
+      const payload = buildSsdbEnrolmentUpsertPayload(existingId, existing, incoming);
       recordPatches.set(existingId, {
         ...(payload as Partial<EpicConversionRecord>),
         updated_at: new Date().toISOString(),
@@ -384,14 +331,12 @@ export function useEpicConversionRecords() {
       const icl_decision_by = decision === 'pending' ? null : decisionBy;
       const icl_decision_at = decision === 'pending' ? null : new Date().toISOString();
 
-      const { data, error: updateError } = await supabase
+      const { error: updateError } = await supabase
         .from('epic_conversion_records')
         .update({ icl_decision, icl_decision_by, icl_decision_at })
-        .eq('id', id)
-        .select('id');
+        .eq('id', id);
 
       if (updateError) return { error: updateError.message };
-      if (!data?.length) return { error: 'Record could not be updated.' };
 
       setRecords((prev) =>
         prev.map((r) =>
