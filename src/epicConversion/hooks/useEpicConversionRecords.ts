@@ -29,6 +29,30 @@ import {
   type StrategyBreakdown,
 } from '../progress/recordStrategyTabs';
 
+function countStrategyBreakdownForSsdbIngest(
+  rowsToInsert: EpicConversionInsertRow[],
+  rowsToUpdate: { existingId: string; incoming: EpicConversionInsertRow }[],
+  existingByEnrollId: Map<
+    string,
+    Pick<EpicConversionRecord, 'icl_decision' | 'completed_at' | 'status'>
+  >
+): StrategyBreakdown {
+  return countStrategyBreakdown([
+    ...rowsToInsert,
+    ...rowsToUpdate.map(({ incoming }) => {
+      const existing = incoming.enroll_id
+        ? existingByEnrollId.get(incoming.enroll_id)
+        : undefined;
+      return {
+        ...incoming,
+        icl_decision: existing?.icl_decision ?? null,
+        completed_at: existing?.completed_at ?? null,
+        status: existing?.status ?? null,
+      };
+    }),
+  ]);
+}
+
 export type DischargeStatusTarget = 'icl' | 'episode';
 export type EpisodeConversionStatusTarget = 'icl' | 'discharge';
 
@@ -160,6 +184,7 @@ export function useEpicConversionRecords() {
       | 'enroll_id'
       | (typeof SSDB_ENROLMENT_SYNC_FIELD_NAMES)[number]
       | 'icl_decision'
+      | 'completed_at'
       | 'status'
       | 'discharge_date'
       | 'discharge_date_source'
@@ -174,7 +199,7 @@ export function useEpicConversionRecords() {
         ? await supabase
             .from('epic_conversion_records')
             .select(
-              'id, enroll_id, gcn, mrn, pathway, care_path, support_tier, ic_lead, registration_date, hosp_dc_date, episode_conversion_strategy, los, los_category, latest_srv, days_since_lvd, lvd, lvt, source_filename, icl_decision, status, discharge_date, discharge_date_source, discharge_reason'
+              'id, enroll_id, gcn, mrn, pathway, care_path, support_tier, ic_lead, registration_date, hosp_dc_date, episode_conversion_strategy, los, los_category, latest_srv, days_since_lvd, lvd, lvt, source_filename, icl_decision, completed_at, status, discharge_date, discharge_date_source, discharge_reason'
             )
             .in('enroll_id', batch)
         : await supabase
@@ -292,10 +317,11 @@ export function useEpicConversionRecords() {
           updated,
           unchanged,
           skippedDuplicates,
-          strategyBreakdown: countStrategyBreakdown([
-            ...rowsToInsert,
-            ...rowsToUpdate.map(({ incoming }) => incoming),
-          ]),
+          strategyBreakdown: countStrategyBreakdownForSsdbIngest(
+            rowsToInsert,
+            rowsToUpdate,
+            existingByEnrollId
+          ),
         });
       }
       autoDischarged = count;
@@ -318,10 +344,11 @@ export function useEpicConversionRecords() {
       unchanged,
       skippedDuplicates,
       autoDischarged,
-      strategyBreakdown: countStrategyBreakdown([
-        ...rowsToInsert,
-        ...rowsToUpdate.map(({ incoming }) => incoming),
-      ]),
+      strategyBreakdown: countStrategyBreakdownForSsdbIngest(
+        rowsToInsert,
+        rowsToUpdate,
+        existingByEnrollId
+      ),
     };
   }, [dischargeAbsentFromSsdbUpload, refresh]);
 

@@ -1,6 +1,26 @@
 import * as XLSX from 'xlsx';
+import { hasHeaderAlias, missingHeaderErrors, normalizedHeaderSet, validateImportRowCount } from './importLimits';
+import { isVhaSsdbExport } from './transformVhaSsdbEnrolment';
+import { isVhaSsdbServiceExport } from './transformVhaSsdbService';
 import { pick, str } from './mapEpicConversionRow';
 import { mapEpicEpisodeToVhaPathway } from '../reconciliation/epicPathwayMap';
+
+const EPIC_REPORT_HEADER_ALIASES = {
+  Patient: ['Patient', 'PATIENT', 'patient'],
+  MRN: ['MRN', 'mrn'],
+  Episode: ['Episode', 'EPISODE', 'episode', 'PATHWAY', 'pathway'],
+  'IC Lead': [
+    "Patient's Case Team Members",
+    'Patients Case Team Members',
+    'Patient Case Team Members',
+    'ICL/HCS Assigned',
+    'ICL / HCS Assigned',
+    'ICL HCS Assigned',
+    'IC LEAD',
+    'IC_LEAD',
+    'ic lead',
+  ],
+} as const;
 
 export interface EpicReportParseRow {
   patient_name: string | null;
@@ -58,6 +78,28 @@ function parseRawSheet(buf: ArrayBuffer): {
   return { headers, rows, errors };
 }
 
+export function validateEpicReportHeaders(headers: string[]): string[] {
+  return missingHeaderErrors(
+    headers,
+    Object.entries(EPIC_REPORT_HEADER_ALIASES).map(([label, aliases]) => ({
+      label,
+      aliases,
+    }))
+  );
+}
+
+export function isEpicReportExport(headers: string[]): boolean {
+  if (isVhaSsdbExport(headers) || isVhaSsdbServiceExport(headers)) {
+    return false;
+  }
+  const normalized = normalizedHeaderSet(headers);
+  return (
+    hasHeaderAlias(normalized, EPIC_REPORT_HEADER_ALIASES.Patient) &&
+    hasHeaderAlias(normalized, EPIC_REPORT_HEADER_ALIASES.MRN) &&
+    hasHeaderAlias(normalized, EPIC_REPORT_HEADER_ALIASES.Episode)
+  );
+}
+
 function mapReportRow(row: Record<string, unknown>, rowIndex: number): EpicReportParseRow | null {
   const mrn = str(pick(row, ['MRN', 'mrn']));
   if (!mrn) return null;
@@ -93,14 +135,21 @@ export function parseEpicConversionReportBuffer(buf: ArrayBuffer): EpicReportPar
   const parsed = parseRawSheet(buf);
   const errors = [...parsed.errors];
 
+  const rowLimitError = validateImportRowCount(parsed.rows.length);
+  if (rowLimitError) errors.push(rowLimitError);
+
   if (!parsed.rows.length) {
     errors.push('No data rows found in the spreadsheet');
     return { rows: [], skipped: 0, unmappedEpisodes: [], errors };
   }
 
-  const hasMrn = parsed.headers.some((h) => h.trim().toLowerCase().replace(/\s+/g, ' ') === 'mrn');
-  if (!hasMrn) {
-    errors.push('Missing required column: MRN');
+  if (rowLimitError) {
+    return { rows: [], skipped: 0, unmappedEpisodes: [], errors };
+  }
+
+  const headerErrors = validateEpicReportHeaders(parsed.headers);
+  errors.push(...headerErrors);
+  if (headerErrors.length) {
     return { rows: [], skipped: 0, unmappedEpisodes: [], errors };
   }
 

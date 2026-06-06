@@ -10,11 +10,14 @@ import { ConversionDiscrepanciesPanel } from '../epicConversion/components/Conve
 import {
   buildCarePlanPatientLinks,
   computeCarePlanProgressMetrics,
+  DEFAULT_SSDB_VISIT_TO_DATE,
   findCompletedRecordIdsNeedingCarePlanRecheck,
+  type CarePlanDateRange,
 } from '../epicConversion/carePlan/linkCarePlans';
 import {
   CarePlanConversionPanel,
   useCarePlanConversionData,
+  useCarePlanDefaultTabPendingCount,
 } from '../epicConversion/components/CarePlanConversionPanel';
 import {
   ConsolidatedImportUploadDialog,
@@ -56,7 +59,7 @@ import { computeImportActivity } from '../epicConversion/progress/computeImportA
 import { formatStrategyBreakdown } from '../epicConversion/progress/computeImportActivity';
 import { buildUnifiedImportActivity } from '../epicConversion/progress/computeUnifiedImportActivity';
 import { computeDailyProgressSeries } from '../epicConversion/progress/computeDailyProgressSeries';
-import { computeProgressMetrics } from '../epicConversion/progress/computeProgressMetrics';
+import { computeProgressMetrics, GO_LIVE_DATE } from '../epicConversion/progress/computeProgressMetrics';
 import {
   DISCHARGE_STRATEGY,
   EPISODE_CONVERSION_STRATEGY,
@@ -64,6 +67,7 @@ import {
   NO_STRATEGY_LABEL,
   recordBelongsToStrategyTab,
   recordBelongsToStrategyTabBadge,
+  recordNeedsIclReassessment,
   sortStrategyTabs,
   strategyTabLabel,
 } from '../epicConversion/progress/recordStrategyTabs';
@@ -1204,15 +1208,38 @@ export function EpicConversionPage() {
     ]
   );
 
-  const { patientLinks: carePlanPatientLinks, summary: carePlanSummary } =
-    useCarePlanConversionData(
-      records,
-      carePlanRows,
-      carePlanImportFilenames,
-      validatedRecordIds,
-      emarRows,
-      emarImportFilenames
-    );
+  const { patientLinks: carePlanPatientLinks } = useCarePlanConversionData(
+    records,
+    carePlanRows,
+    carePlanImportFilenames,
+    validatedRecordIds,
+    emarRows,
+    emarImportFilenames
+  );
+  const carePlanServiceDataRefreshKey = useMemo(
+    () =>
+      serviceDataImports
+        .map((imp) => `${imp.id}:${imp.imported_at}:${imp.row_count}`)
+        .join('|'),
+    [serviceDataImports]
+  );
+  const carePlanDefaultTabPendingCount = useCarePlanDefaultTabPendingCount(
+    carePlanPatientLinks,
+    serviceDataImports.length > 0,
+    carePlanServiceDataRefreshKey,
+    fetchSsdbServiceDateBounds,
+    fetchVisitCountsByEnrollIdInDateRange
+  );
+  const [carePlanToolbarPendingCount, setCarePlanToolbarPendingCount] = useState<number | null>(
+    null
+  );
+  const carePlanTabCount = carePlanToolbarPendingCount ?? carePlanDefaultTabPendingCount;
+
+  useEffect(() => {
+    if (!isCarePlanTab) {
+      setCarePlanToolbarPendingCount(null);
+    }
+  }, [isCarePlanTab]);
 
   const epicValidationByRecordId = useMemo(
     () =>
@@ -1231,6 +1258,61 @@ export function EpicConversionPage() {
 
   const showEpicSnapshotColumn = reportImports.length > 0;
 
+  const goLiveVisitWindowRange = useMemo<CarePlanDateRange>(
+    () => ({ from: GO_LIVE_DATE, to: DEFAULT_SSDB_VISIT_TO_DATE }),
+    []
+  );
+  const [limitProgressToGoLiveVisitWindow, setLimitProgressToGoLiveVisitWindow] = useState(true);
+  const [progressVisitCountsByEnrollId, setProgressVisitCountsByEnrollId] = useState<Map<
+    string,
+    number
+  > | null>(null);
+
+  useEffect(() => {
+    if (serviceDataImports.length === 0) {
+      setProgressVisitCountsByEnrollId(null);
+      return;
+    }
+
+    let cancelled = false;
+    void fetchVisitCountsByEnrollIdInDateRange(
+      goLiveVisitWindowRange.from,
+      goLiveVisitWindowRange.to
+    ).then(({ visitCountsByEnrollId: counts }) => {
+      if (!cancelled) {
+        setProgressVisitCountsByEnrollId(counts);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    serviceDataImports.length,
+    carePlanServiceDataRefreshKey,
+    goLiveVisitWindowRange,
+    fetchVisitCountsByEnrollIdInDateRange,
+  ]);
+
+  const progressVisitWindowFilter = useMemo(() => {
+    if (
+      !limitProgressToGoLiveVisitWindow ||
+      serviceDataImports.length === 0 ||
+      progressVisitCountsByEnrollId === null
+    ) {
+      return undefined;
+    }
+    return {
+      range: goLiveVisitWindowRange,
+      visitCountsByEnrollId: progressVisitCountsByEnrollId,
+    };
+  }, [
+    limitProgressToGoLiveVisitWindow,
+    serviceDataImports.length,
+    progressVisitCountsByEnrollId,
+    goLiveVisitWindowRange,
+  ]);
+
   const progressMetrics = useMemo(
     () =>
       computeProgressMetrics(
@@ -1242,8 +1324,8 @@ export function EpicConversionPage() {
   );
 
   const carePlanProgressMetrics = useMemo(
-    () => computeCarePlanProgressMetrics(carePlanPatientLinks),
-    [carePlanPatientLinks]
+    () => computeCarePlanProgressMetrics(carePlanPatientLinks, progressVisitWindowFilter),
+    [carePlanPatientLinks, progressVisitWindowFilter]
   );
   const dailyProgressSeries = useMemo(() => computeDailyProgressSeries(records), [records]);
 
@@ -1432,10 +1514,7 @@ export function EpicConversionPage() {
 
   const iclPendingRecords = useMemo(() => {
     if (!isIclTab) return [];
-    return filtered.filter(
-      (r) =>
-        r.episode_conversion_strategy === ICL_REASSESSMENT_STRATEGY && !r.icl_decision
-    );
+    return filtered.filter((r) => recordNeedsIclReassessment(r));
   }, [filtered, isIclTab]);
 
   const iclPendingIdSet = useMemo(
@@ -2120,9 +2199,9 @@ export function EpicConversionPage() {
                 onClick={() => setActiveTab(CARE_PLAN_CONVERSION_TAB)}
               >
                 {CARE_PLAN_CONVERSION_TAB}
-                {carePlanSummary.withoutCarePlanCount > 0 && (
+                {carePlanTabCount > 0 && (
                   <span className="hc-strategy-tab-count hc-strategy-tab-count--care-plan">
-                    {carePlanSummary.withoutCarePlanCount}
+                    {carePlanTabCount}
                   </span>
                 )}
               </button>
@@ -2175,9 +2254,9 @@ export function EpicConversionPage() {
                 onClick={() => setActiveTab(CARE_PLAN_CONVERSION_TAB)}
               >
                 {CARE_PLAN_CONVERSION_TAB}
-                {carePlanSummary.withoutCarePlanCount > 0 && (
+                {carePlanTabCount > 0 && (
                   <span className="hc-strategy-tab-count hc-strategy-tab-count--care-plan">
-                    {carePlanSummary.withoutCarePlanCount}
+                    {carePlanTabCount}
                   </span>
                 )}
               </button>
@@ -2472,6 +2551,7 @@ export function EpicConversionPage() {
         onToggleEmarCompleted={(recordId, completed) =>
           void handleToggleEmarCompleted(recordId, completed)
         }
+        onPendingConversionCountChange={setCarePlanToolbarPendingCount}
       />
     )}
     {!loading && isServiceDataTab && (
@@ -2522,6 +2602,14 @@ export function EpicConversionPage() {
         carePlanUploaderByUserId={carePlanUploaderByUserId}
         onNavigateToStrategy={setActiveTab}
         onNavigateToCarePlan={() => setActiveTab(CARE_PLAN_CONVERSION_TAB)}
+        hasServiceDataImports={serviceDataImports.length > 0}
+        limitToGoLiveVisitWindow={limitProgressToGoLiveVisitWindow}
+        onLimitToGoLiveVisitWindowChange={setLimitProgressToGoLiveVisitWindow}
+        visitWindowFilterLoading={
+          limitProgressToGoLiveVisitWindow &&
+          serviceDataImports.length > 0 &&
+          progressVisitCountsByEnrollId === null
+        }
       />
     )}
     {!loading && !isSpecialTab && records.length > 0 && (

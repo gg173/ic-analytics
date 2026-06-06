@@ -1,4 +1,5 @@
 import { parseSsdbServiceSheet } from './parseSsdbServiceSheet';
+import { validateImportRowCount } from './importLimits';
 import {
   isVhaSsdbServiceExport,
   mapVhaSsdbServiceRows,
@@ -15,8 +16,16 @@ export interface SsdbServiceParseResult {
 export function parseVhaSsdbServiceXlsxBuffer(buf: ArrayBuffer): SsdbServiceParseResult {
   const parsed = parseSsdbServiceSheet(buf);
   const errors = [...parsed.errors];
+
+  const rowLimitError = validateImportRowCount(parsed.rows.length);
+  if (rowLimitError) errors.push(rowLimitError);
+
   if (!parsed.rows.length) {
     errors.push('No data rows found in the spreadsheet');
+    return { rows: [], skipped: 0, errors };
+  }
+
+  if (rowLimitError) {
     return { rows: [], skipped: 0, errors };
   }
 

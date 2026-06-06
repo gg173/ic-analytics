@@ -2719,6 +2719,11 @@ button.hc-epic-split-panel-count--active {
   text-align: left;
 }
 
+.hc-consolidated-import-row-error {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .hc-modal--consolidated-import .hc-consolidated-import-rows .hc-btn-primary {
   flex-shrink: 0;
   width: 100%;
@@ -3522,6 +3527,26 @@ button.hc-epic-split-panel-count--active {
 
 .hc-progress-bar-stat--validated {
   color: #047857;
+}
+
+.hc-progress-card-visit-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0.125rem 0 0;
+  font-size: 0.625rem;
+  font-weight: 400;
+  line-height: 1.3;
+  color: #64748b;
+  white-space: normal;
+  cursor: pointer;
+}
+
+.hc-progress-card-visit-filter input[type='checkbox'] {
+  width: 0.625rem;
+  height: 0.625rem;
+  margin: 0;
+  flex-shrink: 0;
 }
 
 .hc-progress-bar-fill {

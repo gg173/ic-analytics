@@ -1,8 +1,5 @@
 import * as XLSX from 'xlsx';
-import {
-  mapEpicConversionRows,
-  validateEpicConversionHeaders,
-} from './mapEpicConversionRow';
+import { validateImportRowCount } from './importLimits';
 import {
   isVhaSsdbExport,
   mapVhaSsdbRows,
@@ -10,7 +7,7 @@ import {
 } from './transformVhaSsdbEnrolment';
 
 export interface EpicConversionParseResult {
-  rows: ReturnType<typeof mapEpicConversionRows>['rows'];
+  rows: ReturnType<typeof mapVhaSsdbRows>['rows'];
   skipped: number;
   duplicateEnrollIds: number;
   /** True when the workbook is a VHA SSDB export (ENROLL ID + ENROLL STATUS). */
@@ -78,35 +75,35 @@ export function parseEpicConversionXlsxBuffer(
 ): EpicConversionParseResult {
   const parsed = parseRawSheet(buf);
   const errors = [...parsed.errors];
+
+  const rowLimitError = validateImportRowCount(parsed.rows.length);
+  if (rowLimitError) errors.push(rowLimitError);
+
   if (!parsed.rows.length) {
     errors.push('No data rows found in the spreadsheet');
     return emptyResult(errors);
   }
 
-  if (isVhaSsdbExport(parsed.headers)) {
-    const headerErrors = validateVhaSsdbHeaders(parsed.headers);
-    errors.push(...headerErrors);
-    if (headerErrors.length) {
-      return emptyResult(errors, true);
-    }
-
-    const { rows, skipped } = mapVhaSsdbRows(parsed.rows, filename, referenceDate);
-    if (!rows.length) {
-      errors.push('No valid rows (each ACTIVE row needs an ENROLL ID and MRN)');
-    }
-    return { rows, skipped, duplicateEnrollIds: 0, isVhaSsdb: true, errors };
-  }
-
-  const headerErrors = validateEpicConversionHeaders(parsed.headers);
-  errors.push(...headerErrors);
-  if (headerErrors.length) {
+  if (rowLimitError) {
     return emptyResult(errors);
   }
 
-  const { rows, skipped } = mapEpicConversionRows(parsed.rows, filename);
-  if (!rows.length) {
-    errors.push('No valid rows (each row needs an MRN)');
+  if (!isVhaSsdbExport(parsed.headers)) {
+    errors.push(
+      'Unrecognized VHA SSDB Enrolment export (expected ENROLL ID and ENROLL STATUS columns)'
+    );
+    return emptyResult(errors);
   }
 
-  return { rows, skipped, duplicateEnrollIds: 0, isVhaSsdb: false, errors };
+  const headerErrors = validateVhaSsdbHeaders(parsed.headers);
+  errors.push(...headerErrors);
+  if (headerErrors.length) {
+    return emptyResult(errors, true);
+  }
+
+  const { rows, skipped } = mapVhaSsdbRows(parsed.rows, filename, referenceDate);
+  if (!rows.length) {
+    errors.push('No valid rows (each ACTIVE row needs an ENROLL ID and MRN)');
+  }
+  return { rows, skipped, duplicateEnrollIds: 0, isVhaSsdb: true, errors };
 }

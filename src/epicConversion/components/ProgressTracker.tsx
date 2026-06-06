@@ -38,6 +38,7 @@ function ProgressBar({
   validatedComplete,
   iclStats,
   statUnit = 'completed',
+  visitWindowFilter,
 }: {
   complete: number;
   total: number;
@@ -48,6 +49,12 @@ function ProgressBar({
     decidedDischarge: number;
   };
   statUnit?: 'converted' | 'completed' | 'icl-reassessment' | 'discharge-submitted' | 'care-plan';
+  visitWindowFilter?: {
+    checked: boolean;
+    disabled: boolean;
+    label: string;
+    onChange: (checked: boolean) => void;
+  };
 }) {
   const validatedPercentOfComplete =
     validatedComplete != null && complete > 0
@@ -57,6 +64,9 @@ function ProgressBar({
     iclStats && complete > 0 ? Math.round((iclStats.decidedConvert / complete) * 100) : 0;
   const dischargeDecisionPercent =
     iclStats && complete > 0 ? Math.round((iclStats.decidedDischarge / complete) * 100) : 0;
+  const iclDecisionDenominator = complete + total;
+  const iclDecisionPercent =
+    iclDecisionDenominator > 0 ? Math.round((complete / iclDecisionDenominator) * 100) : 0;
   const validatedLabel =
     validatedComplete != null && complete > 0
       ? `, ${validatedComplete} of ${complete} converted Epic episodes validated (${validatedPercentOfComplete}% of converted)`
@@ -84,7 +94,7 @@ function ProgressBar({
             : isCarePlanConversion
               ? `${complete} of ${total} episodes with templated CP, ${percent}%${carePlanConversionLabel}`
               : isIclReassessment && iclStats
-              ? `${complete} of ${total} reassessments completed, ${percent}%. ${iclStats.decidedConvert} of ${complete} decisions to convert (${convertDecisionPercent}%), ${iclStats.decidedDischarge} of ${complete} decisions to discharge (${dischargeDecisionPercent}%)`
+              ? `${complete} of ${iclDecisionDenominator} ICL reassessments decided, ${iclDecisionPercent}%. ${total} still requiring reassessment. ${iclStats.decidedConvert} of ${complete} decisions to convert (${convertDecisionPercent}%), ${iclStats.decidedDischarge} of ${complete} decisions to discharge (${dischargeDecisionPercent}%)`
               : isDischargeSubmitted
                 ? `${complete} of ${total} discharges submitted, ${percent}%`
                 : `${complete} of ${total} completed, ${percent}%${validatedLabel}`
@@ -135,11 +145,33 @@ function ProgressBar({
                 {validatedPercentOfComplete}%)
               </p>
             ) : null}
+            {visitWindowFilter ? (
+              <label
+                className="hc-progress-card-visit-filter"
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => event.stopPropagation()}
+              >
+                <input
+                  type="checkbox"
+                  checked={visitWindowFilter.checked}
+                  disabled={visitWindowFilter.disabled}
+                  onClick={(event) => event.stopPropagation()}
+                  onChange={(event) => visitWindowFilter.onChange(event.target.checked)}
+                />
+                {visitWindowFilter.label}
+                {visitWindowFilter.disabled ? (
+                  <span className="hc-muted"> — loading…</span>
+                ) : null}
+              </label>
+            ) : null}
           </>
         ) : isIclReassessment && iclStats ? (
           <>
             <p className="hc-progress-bar-stat">
-              {complete} / {total} Reassessments Completed
+              {total} Reassessment{total === 1 ? '' : 's'} Required
+            </p>
+            <p className="hc-progress-bar-stat">
+              {complete} / {iclDecisionDenominator} ICL Reassessments Decided ({iclDecisionPercent}%)
             </p>
             <p className="hc-progress-bar-stat">
               {iclStats.decidedConvert} / {complete} Decisions to Convert ({convertDecisionPercent}%)
@@ -172,6 +204,7 @@ function BucketCard({
   iclStats,
   statUnit = 'completed',
   onClick,
+  visitWindowFilter,
 }: {
   title: string;
   total: number;
@@ -184,6 +217,12 @@ function BucketCard({
   };
   statUnit?: 'converted' | 'completed' | 'icl-reassessment' | 'discharge-submitted' | 'care-plan';
   onClick?: () => void;
+  visitWindowFilter?: {
+    checked: boolean;
+    disabled: boolean;
+    label: string;
+    onChange: (checked: boolean) => void;
+  };
 }) {
   const handleKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
     if (!onClick) return;
@@ -214,6 +253,7 @@ function BucketCard({
         validatedComplete={validatedComplete}
         iclStats={iclStats}
         statUnit={statUnit}
+        visitWindowFilter={visitWindowFilter}
       />
     </article>
   );
@@ -229,6 +269,10 @@ interface ProgressTrackerProps {
   carePlanUploaderByUserId: Map<string, BatchUploader>;
   onNavigateToStrategy?: (strategy: string) => void;
   onNavigateToCarePlan?: () => void;
+  hasServiceDataImports?: boolean;
+  limitToGoLiveVisitWindow?: boolean;
+  onLimitToGoLiveVisitWindowChange?: (checked: boolean) => void;
+  visitWindowFilterLoading?: boolean;
 }
 
 function resolveUploaderName(
@@ -255,9 +299,22 @@ export function ProgressTracker({
   carePlanUploaderByUserId,
   onNavigateToStrategy,
   onNavigateToCarePlan,
+  hasServiceDataImports = false,
+  limitToGoLiveVisitWindow = true,
+  onLimitToGoLiveVisitWindowChange,
+  visitWindowFilterLoading = false,
 }: ProgressTrackerProps) {
   const hasGoLive = metrics.daysUntilGoLive != null;
   const daysUntilGoLive = metrics.daysUntilGoLive;
+  const carePlanVisitWindowFilter =
+    hasServiceDataImports && onLimitToGoLiveVisitWindowChange
+      ? {
+          checked: limitToGoLiveVisitWindow,
+          disabled: visitWindowFilterLoading,
+          label: 'Only Pts with June 22 - July 5 Service.',
+          onChange: onLimitToGoLiveVisitWindowChange,
+        }
+      : undefined;
 
   return (
     <section className="hc-progress-tracker">
@@ -301,6 +358,7 @@ export function ProgressTracker({
           validatedComplete={carePlanMetrics.conversionComplete}
           statUnit="care-plan"
           onClick={onNavigateToCarePlan}
+          visitWindowFilter={carePlanVisitWindowFilter}
         />
         <BucketCard
           title="ICL Reassessment Required"

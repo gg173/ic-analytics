@@ -1,4 +1,5 @@
 import { parseDate, pick, str } from './mapEpicConversionRow';
+import { hasHeaderAlias, missingHeaderErrors, normalizedHeaderSet } from './importLimits';
 import type { EpicSsdbService, SsdbServiceParsedRow } from '../serviceData/types';
 
 const HEADER_ALIASES = {
@@ -30,20 +31,21 @@ const HEADER_ALIASES = {
 } as const;
 
 export function validateVhaSsdbServiceHeaders(headers: string[]): string[] {
-  const errors: string[] = [];
-  const normalized = new Set(
-    headers.map((h) => h.trim().toLowerCase().replace(/\s+/g, ' '))
+  return missingHeaderErrors(
+    headers,
+    Object.values(HEADER_ALIASES).map((aliases) => ({
+      label: aliases[0],
+      aliases,
+    }))
   );
-  if (!normalized.has('enroll id')) errors.push('Missing required column: ENROLL ID');
-  if (!normalized.has('calendar key')) errors.push('Missing required column: CALENDAR KEY');
-  return errors;
 }
 
 export function isVhaSsdbServiceExport(headers: string[]): boolean {
-  const normalized = new Set(
-    headers.map((h) => h.trim().toLowerCase().replace(/\s+/g, ' '))
+  const normalized = normalizedHeaderSet(headers);
+  return (
+    hasHeaderAlias(normalized, HEADER_ALIASES.enrollId) &&
+    hasHeaderAlias(normalized, HEADER_ALIASES.calendarKey)
   );
-  return normalized.has('enroll id') && normalized.has('calendar key');
 }
 
 function pickField(row: Record<string, unknown>, keys: readonly string[]): string | null {

@@ -1,7 +1,7 @@
 import {
   DISCHARGE_STRATEGY,
-  ICL_REASSESSMENT_STRATEGY,
   recordBelongsToStrategyTab,
+  recordNeedsIclReassessment,
 } from '../progress/recordStrategyTabs';
 import { normalizeMrnForMatch } from '../reconciliation/reconcileReportRows';
 import type { EpicConversionRecord } from '../types';
@@ -60,10 +60,7 @@ export function isEligibleForCarePlanLinking(
 
   const reasons: CarePlanEligibilityReason[] = [];
 
-  if (
-    record.episode_conversion_strategy === ICL_REASSESSMENT_STRATEGY &&
-    !record.icl_decision
-  ) {
+  if (recordNeedsIclReassessment(record)) {
     reasons.push('icl_pending');
   }
 
@@ -243,6 +240,9 @@ export function getLatestCarePlanRow(link: CarePlanPatientLink): LinkedCarePlanR
 /** 19 May 2026 (calendar). Latest care plan before this date needs an update. */
 export const CARE_PLAN_UPDATE_REQUIRED_BEFORE_MS = Date.parse('2026-05-19T12:00:00');
 
+/** Default toolbar "Visit to date" when SSDB service data is loaded. */
+export const DEFAULT_SSDB_VISIT_TO_DATE = '2026-07-05';
+
 export interface CarePlanDateRange {
   from: string;
   to: string;
@@ -292,7 +292,7 @@ export function patientHasSsdbVisitInToolbarDateRange(
   range: CarePlanDateRange
 ): boolean {
   if (!visitDateRangeIsActive(range)) return true;
-  if (visitCountsByEnrollId === null) return true;
+  if (visitCountsByEnrollId === null) return false;
   const count = getPatientVisitCountInRange(enrollId, visitCountsByEnrollId);
   return count != null && count > 0;
 }
@@ -338,6 +338,37 @@ export function isCarePlanConversionRowComplete(link: CarePlanPatientLink): bool
   return !!link.emarCompletedAt;
 }
 
+export function countPendingCarePlanConversions(links: readonly CarePlanPatientLink[]): number {
+  let pending = 0;
+  for (const link of links) {
+    if (!isCarePlanConversionRowComplete(link)) pending += 1;
+  }
+  return pending;
+}
+
+/** Pending conversions scoped to the toolbar visit date range (default tab badge filters). */
+export function countPendingCarePlanConversionsWithVisitDateRange(
+  links: readonly CarePlanPatientLink[],
+  visitDateRange: CarePlanDateRange,
+  visitCountsByEnrollId: ReadonlyMap<string, number> | null
+): number {
+  let pending = 0;
+  for (const link of links) {
+    if (isCarePlanConversionRowComplete(link)) continue;
+    if (
+      !patientHasSsdbVisitInToolbarDateRange(
+        link.enrollId,
+        visitCountsByEnrollId,
+        visitDateRange
+      )
+    ) {
+      continue;
+    }
+    pending += 1;
+  }
+  return pending;
+}
+
 /**
  * After a new EMRI upload, completed conversions in these categories should return
  * to pending so staff can confirm the status against fresh data.
@@ -366,14 +397,30 @@ export interface CarePlanProgressMetrics {
   percentConversionCompleteOfLinked: number;
 }
 
+export interface CarePlanProgressVisitWindowFilter {
+  range: CarePlanDateRange;
+  visitCountsByEnrollId: ReadonlyMap<string, number>;
+}
+
 export function computeCarePlanProgressMetrics(
-  links: CarePlanPatientLink[]
+  links: CarePlanPatientLink[],
+  visitFilter?: CarePlanProgressVisitWindowFilter
 ): CarePlanProgressMetrics {
-  const total = links.length;
+  const scopedLinks = visitFilter
+    ? links.filter((link) =>
+        patientHasSsdbVisitInToolbarDateRange(
+          link.enrollId,
+          visitFilter.visitCountsByEnrollId,
+          visitFilter.range
+        )
+      )
+    : links;
+
+  const total = scopedLinks.length;
   let linkedComplete = 0;
   let conversionComplete = 0;
 
-  for (const link of links) {
+  for (const link of scopedLinks) {
     if (recordHasTemplatedCarePlan(link)) linkedComplete += 1;
     if (isCarePlanConversionRowComplete(link)) conversionComplete += 1;
   }

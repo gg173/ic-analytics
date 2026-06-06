@@ -1,9 +1,13 @@
 import * as XLSX from 'xlsx';
+import {
+  hasHeaderAlias,
+  missingHeaderErrors,
+  normalizedHeaderSet,
+  validateImportRowCount,
+} from '../ingest/importLimits';
 import { parseDate, pick, str } from '../ingest/mapEpicConversionRow';
 import { dedupeCarePlanInsertRows } from './carePlanDedup';
 import type { CarePlanInsertRow } from './types';
-
-export const CARE_PLAN_REQUIRED_HEADERS = ['BRN'] as const;
 
 const CARE_PLAN_HEADER_ALIASES: Record<string, string[]> = {
   BRN: ['BRN', 'brn'],
@@ -25,6 +29,8 @@ const CARE_PLAN_HEADER_ALIASES: Record<string, string[]> = {
   'Goal Met': ['Goal Met', 'GOAL MET', 'goal met'],
   'Date Saved': ['Date Saved', 'DATE SAVED', 'date saved'],
 };
+
+export const CARE_PLAN_REQUIRED_HEADERS = Object.keys(CARE_PLAN_HEADER_ALIASES);
 
 function headerLookupKey(header: string): string {
   return header.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -51,14 +57,26 @@ function buildHeaderMap(headers: string[]): Map<string, string> {
 }
 
 export function validateCarePlanHeaders(headers: string[]): string[] {
-  const errors: string[] = [];
-  const map = buildHeaderMap(headers);
-  for (const required of CARE_PLAN_REQUIRED_HEADERS) {
-    if (!map.has(required)) {
-      errors.push(`Missing required column: ${required}`);
-    }
+  return missingHeaderErrors(
+    headers,
+    Object.entries(CARE_PLAN_HEADER_ALIASES).map(([label, aliases]) => ({
+      label,
+      aliases,
+    }))
+  );
+}
+
+export function isCarePlanExport(headers: string[]): boolean {
+  const normalized = normalizedHeaderSet(headers);
+  if (hasHeaderAlias(normalized, ['Medication Name', 'MEDICATION NAME', 'medication name'])) {
+    return false;
   }
-  return errors;
+  return (
+    hasHeaderAlias(normalized, CARE_PLAN_HEADER_ALIASES['Client Needs/Goals']) ||
+    hasHeaderAlias(normalized, CARE_PLAN_HEADER_ALIASES['Service/Teaching Plan']) ||
+    hasHeaderAlias(normalized, CARE_PLAN_HEADER_ALIASES.Outcomes) ||
+    hasHeaderAlias(normalized, CARE_PLAN_HEADER_ALIASES['Goal Met'])
+  );
 }
 
 function parseRawSheet(buf: ArrayBuffer): {
@@ -137,7 +155,15 @@ export interface CarePlanParseResult {
 export function parseCarePlanXlsxBuffer(buf: ArrayBuffer): CarePlanParseResult {
   const parsed = parseRawSheet(buf);
   const errors = [...parsed.errors];
+
+  const rowLimitError = validateImportRowCount(parsed.rows.length);
+  if (rowLimitError) errors.push(rowLimitError);
+
   if (!parsed.headers.length) {
+    return { rows: [], skipped: 0, skippedDuplicates: 0, errors };
+  }
+
+  if (rowLimitError) {
     return { rows: [], skipped: 0, skippedDuplicates: 0, errors };
   }
 

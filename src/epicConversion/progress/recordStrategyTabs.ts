@@ -18,11 +18,30 @@ export const EPISODE_CONVERSION_STRATEGY = 'Manually Convert Episode';
 export const ICL_REASSESSMENT_STRATEGY = 'TBD: Conversion at the Discretion of ICL';
 export const DISCHARGE_STRATEGY = 'Do Not Convert: Overdue Discharge';
 
+/** True when a record still needs an ICL convert/discharge decision. */
+export function recordNeedsIclReassessment(
+  r: Pick<
+    EpicConversionRecord,
+    'episode_conversion_strategy' | 'icl_decision' | 'completed_at' | 'status'
+  >
+): boolean {
+  if (r.completed_at) return false;
+  if (r.status === 'discharged') return false;
+  return r.episode_conversion_strategy === ICL_REASSESSMENT_STRATEGY && !r.icl_decision;
+}
+
 export function recordBelongsToStrategyTab(r: EpicConversionRecord, tab: string): boolean {
+  if (r.completed_at) {
+    return tab === EPISODE_CONVERSION_STRATEGY;
+  }
+  if (r.status === 'discharged') {
+    return tab === DISCHARGE_STRATEGY;
+  }
+
   const strategy = r.episode_conversion_strategy ?? NO_STRATEGY_LABEL;
   if (tab === NO_STRATEGY_LABEL) return strategy === NO_STRATEGY_LABEL;
   if (tab === ICL_REASSESSMENT_STRATEGY) {
-    return strategy === ICL_REASSESSMENT_STRATEGY && !r.icl_decision;
+    return recordNeedsIclReassessment(r);
   }
   if (tab === EPISODE_CONVERSION_STRATEGY) {
     return (
@@ -79,7 +98,12 @@ export interface StrategyBreakdown {
 }
 
 export function countStrategyBreakdown(
-  rows: { episode_conversion_strategy?: string | null }[]
+  rows: {
+    episode_conversion_strategy?: string | null;
+    icl_decision?: EpicConversionRecord['icl_decision'];
+    completed_at?: string | null;
+    status?: EpicConversionRecord['status'];
+  }[]
 ): StrategyBreakdown {
   const counts: StrategyBreakdown = {
     episodeConversion: 0,
@@ -88,9 +112,23 @@ export function countStrategyBreakdown(
     other: 0,
   };
   for (const row of rows) {
+    if (row.completed_at) {
+      counts.episodeConversion += 1;
+      continue;
+    }
+    if (row.status === 'discharged') {
+      counts.programDischarge += 1;
+      continue;
+    }
+
     const strategy = row.episode_conversion_strategy;
+    if (strategy === ICL_REASSESSMENT_STRATEGY) {
+      if (row.icl_decision === 'convert') counts.episodeConversion += 1;
+      else if (row.icl_decision === 'discharge') counts.programDischarge += 1;
+      else counts.iclReassessment += 1;
+      continue;
+    }
     if (strategy === EPISODE_CONVERSION_STRATEGY) counts.episodeConversion += 1;
-    else if (strategy === ICL_REASSESSMENT_STRATEGY) counts.iclReassessment += 1;
     else if (strategy === DISCHARGE_STRATEGY) counts.programDischarge += 1;
     else counts.other += 1;
   }

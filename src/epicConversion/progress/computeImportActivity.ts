@@ -47,7 +47,7 @@ export function computeImportActivity(records: EpicConversionRecord[]): ImportAc
 export function formatStrategyBreakdown(breakdown: StrategyBreakdown): string {
   const parts: string[] = [];
   if (breakdown.episodeConversion) parts.push(`${breakdown.episodeConversion} Episode`);
-  if (breakdown.iclReassessment) parts.push(`${breakdown.iclReassessment} ICL`);
+  if (breakdown.iclReassessment) parts.push(`${breakdown.iclReassessment} ICL Reassessment`);
   if (breakdown.programDischarge) parts.push(`${breakdown.programDischarge} Discharge`);
   if (breakdown.other) parts.push(`${breakdown.other} Other`);
   return parts.length ? parts.join(', ') : '—';

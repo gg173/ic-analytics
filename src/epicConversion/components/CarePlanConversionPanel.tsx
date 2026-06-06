@@ -3,6 +3,9 @@ import { useResizableTableColumns } from '../../hooks/useResizableTableColumns';
 import {
   buildCarePlanPatientLinks,
   carePlanDateRangesEqual,
+  countPendingCarePlanConversions,
+  countPendingCarePlanConversionsWithVisitDateRange,
+  DEFAULT_SSDB_VISIT_TO_DATE,
   eligibilityReasonLabel,
   getLatestCarePlanRow,
   getPatientVisitCountInRange,
@@ -1005,6 +1008,7 @@ interface CarePlanConversionPanelProps {
   updatingRecordId: string | null;
   onToggleCarePlanCompleted: (recordId: string, completed: boolean) => void;
   onToggleEmarCompleted: (recordId: string, completed: boolean) => void;
+  onPendingConversionCountChange?: (count: number) => void;
 }
 
 export function CarePlanConversionPanel({
@@ -1018,6 +1022,7 @@ export function CarePlanConversionPanel({
   updatingRecordId,
   onToggleCarePlanCompleted,
   onToggleEmarCompleted,
+  onPendingConversionCountChange,
 }: CarePlanConversionPanelProps) {
   const [patientFilter, setPatientFilter] = useState<CarePlanPatientFilter>('all');
   const [selectedPatientOverview, setSelectedPatientOverview] =
@@ -1040,7 +1045,7 @@ export function CarePlanConversionPanel({
     key: CarePlanTableSortKey;
     direction: SortDirection;
   } | null>(null);
-  const [stackExpandMode, setStackExpandMode] = useState<'none' | 'main' | 'split'>('none');
+  const [stackExpandMode, setStackExpandMode] = useState<'none' | 'main' | 'split'>('main');
 
   const toggleStackExpand = (target: 'main' | 'split') => {
     setStackExpandMode((prev) => (prev === target ? 'none' : target));
@@ -1070,9 +1075,9 @@ export function CarePlanConversionPanel({
     }
 
     let cancelled = false;
-    void fetchSsdbServiceDateBounds().then(({ from, to }) => {
+    void fetchSsdbServiceDateBounds().then(({ from }) => {
       if (cancelled) return;
-      const bounds = { from, to };
+      const bounds = { from, to: DEFAULT_SSDB_VISIT_TO_DATE };
       setDefaultVisitDateRange(bounds);
       setVisitDateRange(bounds);
     });
@@ -1180,50 +1185,36 @@ export function CarePlanConversionPanel({
     ]
   );
 
-  const displaySummary = useMemo(
-    () => summarizeCarePlanLinks(toolbarScopedLinks),
-    [toolbarScopedLinks]
-  );
-
   const filteredPatientLinks = useMemo(
     () =>
-      patientLinks
-        .filter((link) => matchesPatientFilter(link, patientFilter))
-        .filter((link) =>
-          matchesCarePlanToolbarFilters(
-            link,
-            search,
-            pathwayCarePathFilter,
-            pathwayCarePathGroups,
-            icLeadFilter,
-            episodeConversionStatusFilter,
-            visitDateRange,
-            visitCountsByEnrollId,
-            icLeadOptions
-          )
-        ),
-    [
-      patientLinks,
-      patientFilter,
-      search,
-      pathwayCarePathFilter,
-      pathwayCarePathGroups,
-      icLeadFilter,
-      episodeConversionStatusFilter,
-      visitDateRange,
-      visitCountsByEnrollId,
-      icLeadOptions,
-    ]
+      toolbarScopedLinks.filter((link) => matchesPatientFilter(link, patientFilter)),
+    [toolbarScopedLinks, patientFilter]
   );
 
-  const pendingPatientLinks = useMemo(() => {
-    const pending = filteredPatientLinks.filter(
-      (link) => !isCarePlanConversionRowComplete(link)
-    );
-    return tableSort
-      ? sortCarePlanPatientLinks(pending, tableSort, visitCountsByEnrollId)
-      : pending;
-  }, [filteredPatientLinks, tableSort, visitCountsByEnrollId]);
+  const pendingScopedLinks = useMemo(
+    () =>
+      filteredPatientLinks.filter((link) => !isCarePlanConversionRowComplete(link)),
+    [filteredPatientLinks]
+  );
+
+  const displaySummary = useMemo(
+    () => summarizeCarePlanLinks(pendingScopedLinks),
+    [pendingScopedLinks]
+  );
+
+  const pendingPatientLinks = useMemo(
+    () =>
+      tableSort
+        ? sortCarePlanPatientLinks(pendingScopedLinks, tableSort, visitCountsByEnrollId)
+        : pendingScopedLinks,
+    [pendingScopedLinks, tableSort, visitCountsByEnrollId]
+  );
+
+  const pendingConversionCount = pendingScopedLinks.length;
+
+  useEffect(() => {
+    onPendingConversionCountChange?.(pendingConversionCount);
+  }, [pendingConversionCount, onPendingConversionCountChange]);
 
   const completedPatientLinks = useMemo(() => {
     const completed = filteredPatientLinks.filter((link) =>
@@ -1268,7 +1259,7 @@ export function CarePlanConversionPanel({
         <h3 className="hc-epic-split-panel-title">
           <span className="hc-epic-split-panel-title-main">
             Pending Care Plan Conversion
-            <span className="hc-epic-split-panel-count">{pendingPatientLinks.length}</span>
+            <span className="hc-epic-split-panel-count">{pendingConversionCount}</span>
           </span>
           <span className="hc-epic-split-panel-title-actions">
             {renderPanelExportButton(
@@ -1479,7 +1470,88 @@ export function useCarePlanConversionData(
       emarImportFilenames
     );
     const summary = summarizeCarePlanLinks(patientLinks);
+    const pendingConversionCount = countPendingCarePlanConversions(patientLinks);
 
-    return { patientLinks, summary };
+    return { patientLinks, summary, pendingConversionCount };
   }, [records, carePlanRows, importFilenames, validatedRecordIds, emarRows, emarImportFilenames]);
+}
+
+/** Tab badge count with default toolbar filters (all IC leads/pathways, default visit range). */
+export function useCarePlanDefaultTabPendingCount(
+  patientLinks: CarePlanPatientLink[],
+  hasServiceDataImports: boolean,
+  serviceDataRefreshKey: string,
+  fetchSsdbServiceDateBounds: CarePlanConversionPanelProps['fetchSsdbServiceDateBounds'],
+  fetchVisitCountsByEnrollIdInDateRange: CarePlanConversionPanelProps['fetchVisitCountsByEnrollIdInDateRange']
+): number {
+  const emptyVisitDateRange = useMemo<CarePlanDateRange>(() => ({ from: '', to: '' }), []);
+  const [defaultVisitDateRange, setDefaultVisitDateRange] =
+    useState<CarePlanDateRange>(emptyVisitDateRange);
+  const [visitCountsByEnrollId, setVisitCountsByEnrollId] = useState<Map<string, number> | null>(
+    () => new Map()
+  );
+
+  useEffect(() => {
+    if (!hasServiceDataImports) {
+      setDefaultVisitDateRange(emptyVisitDateRange);
+      setVisitCountsByEnrollId(new Map());
+      return;
+    }
+
+    let cancelled = false;
+    void fetchSsdbServiceDateBounds().then(({ from }) => {
+      if (cancelled) return;
+      setDefaultVisitDateRange({ from, to: DEFAULT_SSDB_VISIT_TO_DATE });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    hasServiceDataImports,
+    serviceDataRefreshKey,
+    fetchSsdbServiceDateBounds,
+    emptyVisitDateRange,
+  ]);
+
+  useEffect(() => {
+    if (!hasServiceDataImports || !visitDateRangeIsActive(defaultVisitDateRange)) {
+      setVisitCountsByEnrollId(new Map());
+      return;
+    }
+
+    let cancelled = false;
+    setVisitCountsByEnrollId(null);
+    void fetchVisitCountsByEnrollIdInDateRange(
+      defaultVisitDateRange.from,
+      defaultVisitDateRange.to
+    ).then(({ visitCountsByEnrollId: counts }) => {
+      if (!cancelled) {
+        setVisitCountsByEnrollId(counts);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    hasServiceDataImports,
+    serviceDataRefreshKey,
+    defaultVisitDateRange,
+    fetchVisitCountsByEnrollIdInDateRange,
+  ]);
+
+  return useMemo(() => {
+    if (!hasServiceDataImports) {
+      return countPendingCarePlanConversions(patientLinks);
+    }
+    if (visitCountsByEnrollId === null) {
+      return 0;
+    }
+    return countPendingCarePlanConversionsWithVisitDateRange(
+      patientLinks,
+      defaultVisitDateRange,
+      visitCountsByEnrollId
+    );
+  }, [patientLinks, hasServiceDataImports, defaultVisitDateRange, visitCountsByEnrollId]);
 }

@@ -1,9 +1,13 @@
 import * as XLSX from 'xlsx';
+import {
+  hasHeaderAlias,
+  missingHeaderErrors,
+  normalizedHeaderSet,
+  validateImportRowCount,
+} from '../ingest/importLimits';
 import { parseDate, pick, str } from '../ingest/mapEpicConversionRow';
 import { dedupeEmarInsertRows } from './emarDedup';
 import type { EmarInsertRow } from './types';
-
-export const EMAR_REQUIRED_HEADERS = ['BRN'] as const;
 
 const EMAR_HEADER_ALIASES: Record<string, string[]> = {
   BRN: ['BRN', 'brn'],
@@ -32,6 +36,8 @@ const EMAR_HEADER_ALIASES: Record<string, string[]> = {
   'End Date': ['End Date', 'END DATE', 'end date'],
 };
 
+export const EMAR_REQUIRED_HEADERS = Object.keys(EMAR_HEADER_ALIASES);
+
 function headerLookupKey(header: string): string {
   return header.trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -57,14 +63,18 @@ function buildHeaderMap(headers: string[]): Map<string, string> {
 }
 
 export function validateEmarHeaders(headers: string[]): string[] {
-  const errors: string[] = [];
-  const map = buildHeaderMap(headers);
-  for (const required of EMAR_REQUIRED_HEADERS) {
-    if (!map.has(required)) {
-      errors.push(`Missing required column: ${required}`);
-    }
-  }
-  return errors;
+  return missingHeaderErrors(
+    headers,
+    Object.entries(EMAR_HEADER_ALIASES).map(([label, aliases]) => ({
+      label,
+      aliases,
+    }))
+  );
+}
+
+export function isEmarExport(headers: string[]): boolean {
+  const normalized = normalizedHeaderSet(headers);
+  return hasHeaderAlias(normalized, EMAR_HEADER_ALIASES['Medication Name']);
 }
 
 function parseRawSheet(buf: ArrayBuffer): {
@@ -176,7 +186,15 @@ export interface EmarParseResult {
 export function parseEmarXlsxBuffer(buf: ArrayBuffer): EmarParseResult {
   const parsed = parseRawSheet(buf);
   const errors = [...parsed.errors];
+
+  const rowLimitError = validateImportRowCount(parsed.rows.length);
+  if (rowLimitError) errors.push(rowLimitError);
+
   if (!parsed.headers.length) {
+    return { rows: [], skipped: 0, skippedDuplicates: 0, errors };
+  }
+
+  if (rowLimitError) {
     return { rows: [], skipped: 0, skippedDuplicates: 0, errors };
   }
 

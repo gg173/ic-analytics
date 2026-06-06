@@ -6,7 +6,22 @@ import {
   losCategoryFromDays,
   programLosDays,
 } from './enrolmentRules';
+import { hasHeaderAlias, missingHeaderErrors, normalizedHeaderSet } from './importLimits';
 import { parseDate, pick, str } from './mapEpicConversionRow';
+
+const SSDB_ENROLMENT_HEADER_ALIASES = {
+  'ENROLL STATUS': ['ENROLL STATUS', 'Enroll Status'],
+  'ENROLL ID': ['ENROLL ID', 'Enroll ID'],
+  MRN: ['MRN', 'mrn'],
+  GCN: ['GCN', 'gcn'],
+  PATHWAY: ['PATHWAY', 'pathway'],
+  'CARE PATH': ['CARE PATH', 'Care Path', 'care path'],
+  'SUPPORT TIER': ['SUPPORT TIER', 'Support Tier'],
+  'IC LEAD': ['IC LEAD', 'IC Lead'],
+  'REGISTRATION DATE': ['REGISTRATION DATE', 'Registration Date'],
+  LVD: ['LVD', 'lvd'],
+  LVT: ['LVT', 'lvt'],
+} as const;
 
 function isIgnorableVhaRow(row: Record<string, unknown>): boolean {
   const enrollStatus = str(pick(row, ['ENROLL STATUS', 'Enroll Status']));
@@ -23,23 +38,29 @@ function isIgnorableVhaRow(row: Record<string, unknown>): boolean {
 }
 
 export function validateVhaSsdbHeaders(headers: string[]): string[] {
-  const errors: string[] = [];
-  const normalized = new Set(
-    headers.map((h) => h.trim().toLowerCase().replace(/\s+/g, ' '))
+  const errors = missingHeaderErrors(
+    headers,
+    Object.entries(SSDB_ENROLMENT_HEADER_ALIASES).map(([label, aliases]) => ({
+      label,
+      aliases,
+    }))
   );
-  if (!normalized.has('mrn')) errors.push('Missing required column: MRN');
-  if (!normalized.has('enroll id')) errors.push('Missing required column: ENROLL ID');
-  if (!normalized.has('hosp dc date') && !normalized.has('index date')) {
+  const normalized = normalizedHeaderSet(headers);
+  if (
+    !hasHeaderAlias(normalized, ['HOSP DC DATE', 'Hosp DC Date']) &&
+    !hasHeaderAlias(normalized, ['INDEX DATE', 'Index Date'])
+  ) {
     errors.push('Missing required column: HOSP DC DATE or INDEX DATE');
   }
   return errors;
 }
 
 export function isVhaSsdbExport(headers: string[]): boolean {
-  const normalized = new Set(
-    headers.map((h) => h.trim().toLowerCase().replace(/\s+/g, ' '))
+  const normalized = normalizedHeaderSet(headers);
+  return (
+    hasHeaderAlias(normalized, SSDB_ENROLMENT_HEADER_ALIASES['ENROLL ID']) &&
+    hasHeaderAlias(normalized, SSDB_ENROLMENT_HEADER_ALIASES['ENROLL STATUS'])
   );
-  return normalized.has('enroll id') && normalized.has('enroll status');
 }
 
 export function mapVhaSsdbRow(

@@ -1,4 +1,5 @@
-import { useEffect, useId, type ChangeEvent } from 'react';
+import { useEffect, useId, useState, type ChangeEvent } from 'react';
+import { validateConsolidatedImportFile } from '../ingest/validateConsolidatedImportFile';
 import type { ImportUploadDialogPhase } from './EnrolmentUploadDialog';
 
 export const IMPORT_DOCUMENT_TYPE_LABELS = {
@@ -68,10 +69,35 @@ function ConsolidatedImportFileRow({
   onFileChange,
   onShowEnrolmentHowto,
 }: ConsolidatedImportFileRowProps) {
-  const handleFileInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+  const [rowError, setRowError] = useState<string | null>(null);
+  const [validating, setValidating] = useState(false);
+
+  useEffect(() => {
+    if (!file) setRowError(null);
+  }, [file]);
+
+  const handleFileInputChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const nextFile = event.target.files?.[0] ?? null;
-    onFileChange(kind, nextFile);
     event.target.value = '';
+
+    if (!nextFile) {
+      setRowError(null);
+      onFileChange(kind, null);
+      return;
+    }
+
+    setValidating(true);
+    setRowError(null);
+
+    const result = await validateConsolidatedImportFile(nextFile, kind);
+    setValidating(false);
+
+    if (!result.ok) {
+      setRowError(result.error);
+      return;
+    }
+
+    onFileChange(kind, nextFile);
   };
 
   return (
@@ -100,10 +126,22 @@ function ConsolidatedImportFileRow({
           type="file"
           accept=".xlsx,.xls"
           className="hc-enrolment-upload-file-input"
+          disabled={validating}
           onChange={handleFileInputChange}
         />
-        <span className="hc-enrolment-upload-file-label">{file?.name ?? 'Choose file…'}</span>
+        <span className="hc-enrolment-upload-file-label">
+          {validating ? 'Checking file…' : (file?.name ?? 'Choose file…')}
+        </span>
       </label>
+      {rowError && (
+        <p
+          className="hc-form-error hc-consolidated-import-row-error"
+          role="alert"
+          aria-live="polite"
+        >
+          {rowError}
+        </p>
+      )}
     </div>
   );
 }

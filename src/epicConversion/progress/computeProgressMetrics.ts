@@ -1,3 +1,7 @@
+import {
+  patientHasSsdbVisitInToolbarDateRange,
+  type CarePlanDateRange,
+} from '../carePlan/linkCarePlans';
 import type { EpicConversionRecord } from '../types';
 import {
   DISCHARGE_STRATEGY,
@@ -5,7 +9,13 @@ import {
   ICL_REASSESSMENT_STRATEGY,
   isRecordPending,
   recordBelongsToStrategyTab,
+  recordNeedsIclReassessment,
 } from './recordStrategyTabs';
+
+export interface ProgressVisitWindowFilter {
+  range: CarePlanDateRange;
+  visitCountsByEnrollId: ReadonlyMap<string, number>;
+}
 
 export interface BucketMetrics {
   total: number;
@@ -36,7 +46,7 @@ export interface ProgressMetrics {
   daysUntilGoLive: number | null;
 }
 
-const GO_LIVE_DATE = '2026-06-22';
+export const GO_LIVE_DATE = '2026-06-22';
 
 function bucketMetrics(total: number, pending: number): BucketMetrics {
   const complete = total - pending;
@@ -56,11 +66,28 @@ function daysUntilGoLive(referenceDate: Date = new Date()): number | null {
   return Math.ceil((goLive.getTime() - today.getTime()) / 86400000);
 }
 
+function filterRecordsByVisitWindow(
+  records: EpicConversionRecord[],
+  visitFilter?: ProgressVisitWindowFilter
+): EpicConversionRecord[] {
+  if (!visitFilter) return records;
+  return records.filter((record) =>
+    patientHasSsdbVisitInToolbarDateRange(
+      record.enroll_id,
+      visitFilter.visitCountsByEnrollId,
+      visitFilter.range
+    )
+  );
+}
+
 export function computeProgressMetrics(
   records: EpicConversionRecord[],
   referenceDate: Date = new Date(),
-  validatedRecordIds?: ReadonlySet<string>
+  validatedRecordIds?: ReadonlySet<string>,
+  visitFilter?: ProgressVisitWindowFilter
 ): ProgressMetrics {
+  const scopedRecords = filterRecordsByVisitWindow(records, visitFilter);
+
   let episodeTotal = 0;
   let episodePending = 0;
   let episodeValidatedComplete = 0;
@@ -70,7 +97,7 @@ export function computeProgressMetrics(
   let iclDecidedConvert = 0;
   let iclDecidedDischarge = 0;
 
-  for (const r of records) {
+  for (const r of scopedRecords) {
     if (recordBelongsToStrategyTab(r, EPISODE_CONVERSION_STRATEGY)) {
       episodeTotal += 1;
       if (!r.completed_at) episodePending += 1;
@@ -80,19 +107,25 @@ export function computeProgressMetrics(
       dischargeTotal += 1;
       if (r.status !== 'discharged') dischargePending += 1;
     }
-    if (r.episode_conversion_strategy === ICL_REASSESSMENT_STRATEGY) {
-      if (!r.icl_decision) iclDecisionRequired += 1;
-      else if (r.icl_decision === 'convert') iclDecidedConvert += 1;
-      else if (r.icl_decision === 'discharge') iclDecidedDischarge += 1;
+    if (recordNeedsIclReassessment(r)) {
+      iclDecisionRequired += 1;
+    }
+    if (r.episode_conversion_strategy === ICL_REASSESSMENT_STRATEGY && r.icl_decision === 'convert') {
+      iclDecidedConvert += 1;
+    } else if (
+      r.episode_conversion_strategy === ICL_REASSESSMENT_STRATEGY &&
+      r.icl_decision === 'discharge'
+    ) {
+      iclDecidedDischarge += 1;
     }
   }
 
-  const iclTotal = iclDecisionRequired + iclDecidedConvert + iclDecidedDischarge;
   const iclPending = iclDecisionRequired;
   const iclComplete = iclDecidedConvert + iclDecidedDischarge;
+  const iclTotal = iclPending;
 
-  const pending = records.filter(isRecordPending).length;
-  const totalRecords = records.length;
+  const pending = scopedRecords.filter(isRecordPending).length;
+  const totalRecords = scopedRecords.length;
   const accounted = totalRecords - pending;
 
   return {
@@ -111,7 +144,10 @@ export function computeProgressMetrics(
       total: iclTotal,
       pending: iclPending,
       complete: iclComplete,
-      percentComplete: iclTotal > 0 ? Math.round((iclComplete / iclTotal) * 100) : 0,
+      percentComplete:
+        iclPending + iclComplete > 0
+          ? Math.round((iclComplete / (iclPending + iclComplete)) * 100)
+          : 0,
     },
     programDischarge: bucketMetrics(dischargeTotal, dischargePending),
     daysUntilGoLive: daysUntilGoLive(referenceDate),
